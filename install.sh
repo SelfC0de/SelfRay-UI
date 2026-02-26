@@ -18,6 +18,7 @@ echo -e "${CYAN}"
 echo "  ╔═══════════════════════════════════════════╗"
 echo "  ║          ⚡ SelfRay-UI Installer           ║"
 echo "  ║            Xray Panel Manager              ║"
+echo "  ║        t.me/selfcode_dev                   ║"
 echo "  ╚═══════════════════════════════════════════╝"
 echo -e "${NC}"
 
