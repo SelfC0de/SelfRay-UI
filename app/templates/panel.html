@@ -500,6 +500,7 @@ async function editIb(id){
     document.getElementById('m-add-ib').classList.add('show');
 }
 function condShow(id,show){document.getElementById(id).classList.toggle('show',show);document.getElementById(id).classList.toggle('cond',!show)}
+function ibProtoChange(){
     const p=document.getElementById('ib-proto').value;
     condShow('grp-vless',p==='vless');condShow('grp-ss',p==='shadowsocks');condShow('grp-trojan',p==='trojan');
     condShow('grp-transport',p!=='shadowsocks');ibNetChange();ibSecChange();
