@@ -9,6 +9,7 @@ Lightweight Xray panel. One command install. Full protocol support.
 ## Quick Install
 
 ```bash
+apt update && apt upgrade -y
 bash <(curl -Ls https://raw.githubusercontent.com/SelfC0de/SelfRay-UI/main/install.sh)
 ```
 
