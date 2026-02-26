@@ -123,6 +123,16 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8443
 
 ---
 
+## Uninstall
+
+```bash
+selfray uninstall
+```
+
+Полностью удаляет: панель, xray-core, базу данных, systemd сервис, команду `selfray`.
+
+---
+
 ## Typical Setup: VLESS + Reality
 
 1. Install panel on your VPS

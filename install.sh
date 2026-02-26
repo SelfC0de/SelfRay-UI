@@ -127,12 +127,19 @@ print('New password: '+p)
         systemctl restart $SERVICE
         echo -e "${GREEN}✓ Updated${NC}" ;;
     uninstall)
-        read -p "Remove SelfRay-UI? [y/N] " c
+        read -p "Remove SelfRay-UI completely? [y/N] " c
         if [[ "$c" =~ ^[Yy]$ ]]; then
-            systemctl stop $SERVICE 2>/dev/null; systemctl disable $SERVICE 2>/dev/null
-            rm -f /etc/systemd/system/${SERVICE}.service /usr/local/bin/selfray
-            rm -rf "$DIR"; systemctl daemon-reload
-            echo -e "${GREEN}✓ Removed${NC}"
+            echo -e "${YELLOW}Stopping services...${NC}"
+            systemctl stop $SERVICE 2>/dev/null
+            systemctl disable $SERVICE 2>/dev/null
+            pkill -f "xray run" 2>/dev/null
+            pkill -f "uvicorn app.main" 2>/dev/null
+            echo -e "${YELLOW}Removing files...${NC}"
+            rm -f /etc/systemd/system/${SERVICE}.service
+            rm -f /usr/local/bin/selfray
+            rm -rf "$DIR"
+            systemctl daemon-reload
+            echo -e "${GREEN}✓ SelfRay-UI fully removed${NC}"
         fi ;;
     *)
         echo -e "${CYAN}⚡ SelfRay-UI${NC}"
