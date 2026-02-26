@@ -488,7 +488,11 @@ async def api_xray_version(user: str = Depends(get_current_user)):
         return {"installed": False}
     try:
         r = subprocess.run([str(XRAY_BIN), "version"], capture_output=True, text=True, timeout=10)
-        return {"installed": True, "version": r.stdout.split("\n")[0]}
+        ver = r.stdout.split("\n")[0] if r.stdout else "unknown"
+        parts = ver.split()
+        if len(parts) >= 2:
+            ver = parts[1]
+        return {"installed": True, "version": ver}
     except:
         return {"installed": True, "version": "unknown"}
 

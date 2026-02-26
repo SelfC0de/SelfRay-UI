@@ -320,7 +320,7 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 <div class="toast-container" id="toast-box"></div>
 
 <script>
-async function api(p,o={}){const r=await fetch(p,{headers:{'Content-Type':'application/json',...o.headers},...o});if(r.status===401){location.href='/login';return}return r.json()}
+async function api(p,o={}){try{const r=await fetch(p,{headers:{'Content-Type':'application/json',...o.headers},...o});if(r.status===401){location.href='/login';return null}if(!r.ok){const e=await r.json().catch(()=>({}));return e}return await r.json()}catch(e){console.error('API error:',p,e);return null}}
 
 function toast(m,type='ok'){
     const box=document.getElementById('toast-box');
@@ -350,14 +350,22 @@ document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
 
 let serverIP='';
 async function loadSt(){
-    const s=await api('/api/status');if(!s)return;
-    const el=document.getElementById('xr-st');
-    el.innerHTML=s.xray_running?'<span class="dot dot-g"></span>Running ('+s.pid+')':'<span class="dot dot-r"></span>Stopped';
-    document.getElementById('xr-up').textContent=fmtUp(s.uptime);
-    if(s.server_ip)serverIP=s.server_ip;
-    const v=await api('/api/xray/version');
-    document.getElementById('xr-ver').textContent=v.installed?v.version:'Not installed';
-    document.getElementById('btn-inst').textContent=v.installed?'Reinstall':'Install Xray';
+    try{
+        const s=await api('/api/status');
+        if(s){
+            const el=document.getElementById('xr-st');
+            el.innerHTML=s.xray_running?'<span class="dot dot-g"></span>Running ('+s.pid+')':'<span class="dot dot-r"></span>Stopped';
+            document.getElementById('xr-up').textContent=fmtUp(s.uptime);
+            if(s.server_ip)serverIP=s.server_ip;
+        }
+    }catch(e){console.error('Status load error:',e)}
+    try{
+        const v=await api('/api/xray/version');
+        if(v){
+            document.getElementById('xr-ver').textContent=v.installed?v.version:'Not installed';
+            document.getElementById('btn-inst').textContent=v.installed?'Reinstall':'Install Xray';
+        }
+    }catch(e){console.error('Version load error:',e)}
 }
 async function xAct(a){const r=await api('/api/xray/'+a,{method:'POST'});toast(r.success?a+' OK':'Error',r.success?'ok':'err');loadSt()}
 async function installX(){const b=document.getElementById('btn-inst');b.textContent='Installing...';b.disabled=true;const r=await api('/api/xray/install',{method:'POST'});toast(r.success?'Installed: '+r.version:'Failed: '+(r.error||''),r.success?'ok':'err');b.disabled=false;loadSt()}
