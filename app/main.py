@@ -343,27 +343,28 @@ async def _auto_disable_loop():
 
 
 def _check_and_disable_clients():
-    conn = get_db()
-    now = int(datetime.now().timestamp() * 1000)
-    changed = False
-    clients = conn.execute("SELECT id, expiry_time, traffic_limit, upload, download, enabled FROM clients WHERE enabled=1").fetchall()
-    for c in clients:
-        disable = False
-        if c["expiry_time"] and c["expiry_time"] > 0 and now > c["expiry_time"]:
-            disable = True
-            logger.info(f"Client {c['id']} expired, disabling")
-        if c["traffic_limit"] and c["traffic_limit"] > 0:
-            total = (c["upload"] or 0) + (c["download"] or 0)
-            if total >= c["traffic_limit"]:
+    try:
+        conn = get_db()
+        now = int(datetime.now().timestamp() * 1000)
+        changed = False
+        clients = conn.execute("SELECT id, expiry_time, traffic_limit, upload, download, enabled FROM clients WHERE enabled=1").fetchall()
+        for c in clients:
+            disable = False
+            if c["expiry_time"] and c["expiry_time"] > 0 and now > c["expiry_time"]:
                 disable = True
-                logger.info(f"Client {c['id']} traffic limit reached, disabling")
-        if disable:
-            conn.execute("UPDATE clients SET enabled=0 WHERE id=?", (c["id"],))
-            changed = True
-    if changed:
-        conn.commit()
-        restart_xray()
-    conn.close()
+            if c["traffic_limit"] and c["traffic_limit"] > 0:
+                total = (c["upload"] or 0) + (c["download"] or 0)
+                if total >= c["traffic_limit"]:
+                    disable = True
+            if disable:
+                conn.execute("UPDATE clients SET enabled=0 WHERE id=?", (c["id"],))
+                changed = True
+        if changed:
+            conn.commit()
+            restart_xray()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Auto-disable check error: {e}")
 
 
 app = FastAPI(title="SelfRay-UI", lifespan=lifespan)
@@ -432,7 +433,10 @@ async def api_status(request: Request, user: str = Depends(get_current_user)):
             uptime = int(float(f.read().split()[0]))
     except:
         pass
-    server_ip = _get_server_ip(request)
+    try:
+        server_ip = _get_server_ip(request)
+    except:
+        server_ip = ""
     return {
         "xray_running": is_xray_running(),
         "xray_installed": XRAY_BIN.exists(),
@@ -443,7 +447,6 @@ async def api_status(request: Request, user: str = Depends(get_current_user)):
 
 
 def _get_server_ip(request: Request = None):
-    ip = ""
     if request:
         host = request.headers.get("host", "").split(":")[0]
         if host and host not in ("0.0.0.0", "127.0.0.1", "localhost"):
@@ -451,12 +454,13 @@ def _get_server_ip(request: Request = None):
     try:
         import socket
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(2)
         s.connect(("8.8.8.8", 80))
         ip = s.getsockname()[0]
         s.close()
+        return ip
     except:
-        pass
-    return ip
+        return ""
 
 
 # ═══════════════════════════════════════════
@@ -1226,6 +1230,8 @@ async def subscription(token: str, request: Request):
 
 def _sub_page_html(name, link, proto, expiry, limit, used, token, host):
     sub_url = f"http://{host}/sub/{token}"
+    js_link = link.replace("\\", "\\\\").replace('"', '\\"').replace("'", "\\'")
+    js_sub = sub_url.replace("\\", "\\\\").replace('"', '\\"').replace("'", "\\'")
     return f'''<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>SelfRay — {name}</title>
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
@@ -1276,9 +1282,9 @@ h1{{font-size:20px;background:linear-gradient(135deg,#00c8ff,#7b2fff);-webkit-ba
 </div>
 <div class="toast" id="toast"></div>
 <script>
-new QRCode(document.getElementById("qr"),{{text:"{link}",width:180,height:180,colorDark:"#e0e0e0",colorLight:"#10101a",correctLevel:QRCode.CorrectLevel.M}});
-function cp(){{navigator.clipboard.writeText("{link}");notify("Link copied!")}}
-function cpSub(){{navigator.clipboard.writeText("{sub_url}");notify("Subscription URL copied!")}}
+new QRCode(document.getElementById("qr"),{{text:"{js_link}",width:180,height:180,colorDark:"#e0e0e0",colorLight:"#10101a",correctLevel:QRCode.CorrectLevel.M}});
+function cp(){{navigator.clipboard.writeText("{js_link}");notify("Link copied!")}}
+function cpSub(){{navigator.clipboard.writeText("{js_sub}");notify("Subscription URL copied!")}}
 function notify(m){{const t=document.getElementById("toast");t.textContent=m;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2000)}}
 </script></body></html>'''
 
