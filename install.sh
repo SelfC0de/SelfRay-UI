@@ -42,7 +42,7 @@ fi
 step "Installing system dependencies"
 apt-get update -qq > /dev/null 2>&1
 apt-get install -y -qq python3 python3-pip python3-venv unzip wget curl git > /dev/null 2>&1
-ok "python3, pip, venv, unzip, wget, curl, git"
+ok "System dependencies : Installed"
 
 # ── Step 2 ──
 step "Downloading SelfRay-UI"
