@@ -320,7 +320,18 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 <div class="toast-container" id="toast-box"></div>
 
 <script>
-async function api(p,o={}){try{const r=await fetch(p,{headers:{'Content-Type':'application/json',...o.headers},...o});if(r.status===401){location.href='/login';return null}if(!r.ok){const e=await r.json().catch(()=>({}));return e}return await r.json()}catch(e){console.error('API error:',p,e);return null}}
+async function api(p,o={}){
+    try{
+        const h={'Content-Type':'application/json'};
+        if(o.headers)Object.assign(h,o.headers);
+        const opts={headers:h};
+        if(o.method)opts.method=o.method;
+        if(o.body)opts.body=o.body;
+        const r=await fetch(p,opts);
+        if(r.status===401){location.href='/login';return null}
+        return await r.json();
+    }catch(e){console.error('API:',p,e);return null}
+}
 
 function toast(m,type='ok'){
     const box=document.getElementById('toast-box');
