@@ -297,9 +297,10 @@ def _generate_reality_keys():
         lines = result.stdout.strip().split("\n")
         priv = pub = ""
         for line in lines:
-            if "Private" in line:
+            low = line.lower()
+            if "private" in low:
                 priv = line.split(":")[-1].strip()
-            elif "Public" in line:
+            elif "public" in low or "password" in low:
                 pub = line.split(":")[-1].strip()
         if priv and pub:
             return priv, pub
