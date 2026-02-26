@@ -526,7 +526,7 @@ async def api_change_password(data: PasswordChange, user: str = Depends(get_curr
 
 
 # ═══════════════════════════════════════════
-#  API: INBOUNDS (full settings like 3x-ui)
+#  API: INBOUNDS
 # ═══════════════════════════════════════════
 
 class InboundCreate(BaseModel):

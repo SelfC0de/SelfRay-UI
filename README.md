@@ -1,8 +1,8 @@
 # <img src="app/static/logo.png" width="40" align="center"> SelfRay-UI
 
-Lightweight Xray panel. One command install. Full protocol support.
+Lightweight Xray management panel. One command install. Full protocol support.
 
-**Simpler alternative to 3X-UI** — Python + FastAPI backend, zero npm/webpack/Go compilation.
+Python + FastAPI backend, zero npm/webpack/Go compilation.
 
 ---
 
