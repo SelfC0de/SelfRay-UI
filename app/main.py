@@ -325,8 +325,45 @@ async def lifespan(app: FastAPI):
         conn.close()
         if has:
             start_xray()
+    task = asyncio.create_task(_auto_disable_loop())
     yield
+    task.cancel()
     stop_xray()
+
+
+async def _auto_disable_loop():
+    while True:
+        try:
+            await asyncio.sleep(60)
+            _check_and_disable_clients()
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Auto-disable error: {e}")
+
+
+def _check_and_disable_clients():
+    conn = get_db()
+    now = int(datetime.now().timestamp() * 1000)
+    changed = False
+    clients = conn.execute("SELECT id, expiry_time, traffic_limit, upload, download, enabled FROM clients WHERE enabled=1").fetchall()
+    for c in clients:
+        disable = False
+        if c["expiry_time"] and c["expiry_time"] > 0 and now > c["expiry_time"]:
+            disable = True
+            logger.info(f"Client {c['id']} expired, disabling")
+        if c["traffic_limit"] and c["traffic_limit"] > 0:
+            total = (c["upload"] or 0) + (c["download"] or 0)
+            if total >= c["traffic_limit"]:
+                disable = True
+                logger.info(f"Client {c['id']} traffic limit reached, disabling")
+        if disable:
+            conn.execute("UPDATE clients SET enabled=0 WHERE id=?", (c["id"],))
+            changed = True
+    if changed:
+        conn.commit()
+        restart_xray()
+    conn.close()
 
 
 app = FastAPI(title="SelfRay-UI", lifespan=lifespan)
@@ -1098,10 +1135,93 @@ async def subscription(token: str, request: Request):
     if not ib:
         raise HTTPException(404)
     host = request.headers.get("host", "").split(":")[0]
+    if not host or host in ("0.0.0.0", "127.0.0.1", "localhost"):
+        host = _get_server_ip(request)
     stream = json.loads(ib["stream_settings"])
     settings = json.loads(ib["settings"])
     link = _generate_link(ib["protocol"], dict(client), dict(ib), stream, settings, host)
-    return Response(content=base64.b64encode(link.encode()).decode(), media_type="text/plain")
+
+    ua = (request.headers.get("user-agent", "") or "").lower()
+    is_app = any(x in ua for x in ["v2rayn", "hiddify", "nekobox", "nekoray", "clash", "surge", "shadowrocket", "streisand", "v2rayng", "sing-box", "stash", "quantumult"])
+    if is_app:
+        sub_name = get_setting("sub_profile_title", "SelfRay-UI")
+        headers = {
+            "content-disposition": f'attachment; filename="{client["email"]}"',
+            "profile-title": base64.b64encode(sub_name.encode()).decode(),
+            "subscription-userinfo": f'upload={client["upload"] or 0}; download={client["download"] or 0}; total={client["traffic_limit"] or 0}',
+            "profile-update-interval": "12",
+        }
+        return Response(content=base64.b64encode(link.encode()).decode(), media_type="text/plain", headers=headers)
+
+    exp_str = "Unlimited"
+    if client["expiry_time"] and client["expiry_time"] > 0:
+        exp_dt = datetime.fromtimestamp(client["expiry_time"] / 1000)
+        exp_str = exp_dt.strftime("%Y-%m-%d %H:%M")
+    traf_str = "Unlimited"
+    if client["traffic_limit"] and client["traffic_limit"] > 0:
+        traf_str = f"{client['traffic_limit'] / (1024**3):.1f} GB"
+    used = ((client["upload"] or 0) + (client["download"] or 0)) / (1024**3)
+
+    return HTMLResponse(_sub_page_html(client["email"], link, ib["protocol"].upper(), exp_str, traf_str, f"{used:.2f} GB", token, host))
+
+
+def _sub_page_html(name, link, proto, expiry, limit, used, token, host):
+    sub_url = f"http://{host}/sub/{token}"
+    return f'''<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SelfRay — {name}</title>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<style>
+*{{margin:0;padding:0;box-sizing:border-box}}
+body{{font-family:'Segoe UI',system-ui,sans-serif;background:#08080d;color:#e0e0e0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}}
+body::before{{content:'';position:fixed;inset:0;background:radial-gradient(ellipse at 30% 0%,rgba(123,47,255,.08) 0%,transparent 60%),radial-gradient(ellipse at 70% 100%,rgba(0,200,255,.06) 0%,transparent 60%);pointer-events:none}}
+.box{{background:rgba(16,16,26,.9);backdrop-filter:blur(20px);border:1px solid rgba(40,40,70,.5);border-radius:16px;padding:32px;max-width:440px;width:100%;animation:su .5s ease;position:relative;z-index:1}}
+@keyframes su{{from{{opacity:0;transform:translateY(20px)}}to{{opacity:1;transform:translateY(0)}}}}
+h1{{font-size:20px;background:linear-gradient(135deg,#00c8ff,#7b2fff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:4px}}
+.sub{{color:#667;font-size:12px;margin-bottom:20px}}
+.stats{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:20px}}
+.st{{background:rgba(8,8,15,.8);border:1px solid rgba(40,40,70,.4);border-radius:10px;padding:10px;text-align:center}}
+.st .lb{{font-size:10px;color:#667;text-transform:uppercase;letter-spacing:.5px}}.st .vl{{font-size:14px;font-weight:600;margin-top:2px}}
+.qr-wrap{{display:flex;justify-content:center;margin:16px 0;animation:su .7s ease}}
+.qr-wrap canvas,.qr-wrap img{{border-radius:8px!important}}
+.link-box{{background:rgba(8,8,15,.8);border:1px solid rgba(40,40,70,.4);border-radius:8px;padding:10px;word-break:break-all;font-family:monospace;font-size:10px;margin:12px 0;max-height:80px;overflow:auto;color:#888}}
+.btn{{display:block;width:100%;padding:12px;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;transition:all .25s;margin-bottom:8px;text-align:center;text-decoration:none}}
+.btn-p{{background:linear-gradient(135deg,#00c8ff,#7b2fff);color:#fff}}.btn-p:hover{{transform:translateY(-2px);box-shadow:0 4px 20px rgba(0,200,255,.3)}}
+.btn-o{{background:transparent;border:1px solid rgba(40,40,70,.5);color:#e0e0e0}}.btn-o:hover{{border-color:#00c8ff;color:#00c8ff}}
+.apps{{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:12px}}
+.apps a{{font-size:11px;padding:8px;border-radius:8px;background:rgba(8,8,15,.6);border:1px solid rgba(40,40,70,.3);color:#aaa;text-align:center;text-decoration:none;transition:all .2s}}
+.apps a:hover{{border-color:#00c8ff;color:#00c8ff;transform:translateY(-1px)}}
+.toast{{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(80px);background:linear-gradient(135deg,rgba(46,213,115,.9),rgba(46,213,115,.7));color:#000;padding:10px 24px;border-radius:10px;font-size:12px;font-weight:500;opacity:0;transition:all .3s;z-index:99}}
+.toast.show{{transform:translateX(-50%) translateY(0);opacity:1}}
+.footer{{text-align:center;margin-top:16px;font-size:10px;color:#445}}
+</style></head><body>
+<div class="box">
+<h1>{name}</h1>
+<div class="sub">{proto} subscription via SelfRay-UI</div>
+<div class="stats">
+<div class="st"><div class="lb">Expires</div><div class="vl" style="font-size:11px">{expiry}</div></div>
+<div class="st"><div class="lb">Limit</div><div class="vl">{limit}</div></div>
+<div class="st"><div class="lb">Used</div><div class="vl">{used}</div></div>
+</div>
+<div class="qr-wrap"><div id="qr"></div></div>
+<div class="link-box" id="link">{link}</div>
+<button class="btn btn-p" onclick="cp()">Copy Connection Link</button>
+<button class="btn btn-o" onclick="cpSub()">Copy Subscription URL</button>
+<div style="font-size:11px;color:#667;margin-top:14px;text-align:center">Open with</div>
+<div class="apps">
+<a href="v2rayn://install-sub?url={sub_url}&name={name}" target="_blank">v2rayN</a>
+<a href="hiddify://install-config?url={sub_url}&name={name}" target="_blank">Hiddify</a>
+<a href="clash://install-config?url={sub_url}" target="_blank">Clash / Streisand</a>
+<a href="nekobox://subscribe?url={sub_url}&name={name}" target="_blank">NekoBox</a>
+</div>
+<div class="footer">Powered by SelfRay-UI</div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+new QRCode(document.getElementById("qr"),{{text:"{link}",width:180,height:180,colorDark:"#e0e0e0",colorLight:"#10101a",correctLevel:QRCode.CorrectLevel.M}});
+function cp(){{navigator.clipboard.writeText("{link}");notify("Link copied!")}}
+function cpSub(){{navigator.clipboard.writeText("{sub_url}");notify("Subscription URL copied!")}}
+function notify(m){{const t=document.getElementById("toast");t.textContent=m;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2000)}}
+</script></body></html>'''
 
 
 # ═══════════════════════════════════════════
