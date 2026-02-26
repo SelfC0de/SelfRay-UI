@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>SelfRay-UI — Panel</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0a0f;--card:#12121a;--border:#1e1e2e;--text:#e0e0e0;--muted:#666;--accent:#00c8ff;--accent2:#7b2fff;--danger:#ff4757;--success:#2ed573;--warn:#ffa502}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:13px}
+.hdr{background:var(--card);border-bottom:1px solid var(--border);padding:10px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+.hdr h1{font-size:18px;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hdr-r{display:flex;gap:10px;align-items:center}
+.hdr-r span{color:var(--muted);font-size:12px}
+.wrap{max-width:1200px;margin:0 auto;padding:16px}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:16px}
+.tab{padding:8px 16px;cursor:pointer;color:var(--muted);font-size:13px;border-bottom:2px solid transparent}
+.tab:hover{color:var(--text)}.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.tc{display:none}.tc.active{display:block}
+.card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:12px}
+.card h3{font-size:14px;margin-bottom:12px;color:var(--accent)}
+.sbar{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:16px}
+.si{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:12px}
+.si .lb{font-size:11px;color:var(--muted)}.si .vl{font-size:16px;font-weight:600;margin-top:2px}
+.fr{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+.fr3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px}
+.fg{margin-bottom:10px}
+.fg label{display:block;font-size:11px;color:var(--muted);margin-bottom:3px}
+input,select,textarea{width:100%;padding:7px 10px;background:#0a0a12;border:1px solid #2a2a3a;border-radius:5px;color:var(--text);font-size:12px;outline:none;font-family:inherit}
+input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+textarea{resize:vertical;min-height:60px;font-family:monospace}
+.cb{display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer}
+.cb input[type=checkbox]{width:auto;accent-color:var(--accent)}
+.btn{padding:6px 14px;border:none;border-radius:5px;font-size:12px;font-weight:500;cursor:pointer;color:#fff;transition:opacity .2s}
+.btn:hover{opacity:.85}
+.btn-p{background:linear-gradient(135deg,var(--accent),var(--accent2))}
+.btn-d{background:var(--danger)}
+.btn-s{background:var(--success);color:#000}
+.btn-o{background:transparent;border:1px solid var(--border);color:var(--text)}
+.btn-w{background:var(--warn);color:#000}
+.btn-sm{padding:4px 8px;font-size:11px}
+.bg{display:flex;gap:6px;flex-wrap:wrap}
+.tbl{width:100%;border-collapse:collapse}
+.tbl th,.tbl td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--border);font-size:12px}
+.tbl th{color:var(--muted);font-weight:500;font-size:11px}
+.badge{display:inline-block;padding:2px 6px;border-radius:3px;font-size:10px;font-weight:600}
+.b-on{background:rgba(46,213,115,.15);color:var(--success)}
+.b-off{background:rgba(255,71,87,.15);color:var(--danger)}
+.b-pr{background:rgba(0,200,255,.1);color:var(--accent)}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px}
+.dot-g{background:var(--success)}.dot-r{background:var(--danger)}
+.mo{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:flex-start;justify-content:center;padding-top:40px;overflow-y:auto}
+.mo.show{display:flex}
+.ml{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:20px;width:620px;max-width:95vw;margin-bottom:40px}
+.ml h3{margin-bottom:14px;font-size:15px}
+.ma{display:flex;gap:6px;justify-content:flex-end;margin-top:14px}
+.sep{border:none;border-top:1px solid var(--border);margin:12px 0}
+.lbox{background:#0a0a12;border:1px solid var(--border);border-radius:5px;padding:8px;word-break:break-all;font-family:monospace;font-size:11px;margin:6px 0;position:relative}
+.cpb{position:absolute;top:4px;right:4px;padding:2px 6px;background:var(--accent);border:none;border-radius:3px;color:#000;font-size:10px;cursor:pointer}
+.toast{position:fixed;bottom:16px;right:16px;padding:8px 16px;border-radius:6px;font-size:12px;z-index:9999;animation:si .3s}
+.toast.ok{background:var(--success);color:#000}.toast.err{background:var(--danger);color:#fff}
+@keyframes si{from{transform:translateY(16px);opacity:0}}
+.hidden{display:none}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+.cond{display:none}.cond.show{display:block}
+.section-title{font-size:12px;font-weight:600;color:var(--accent);margin:10px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--border)}
+</style>
+</head>
+<body>
+<div class="hdr">
+    <h1>⚡ SelfRay-UI</h1>
+    <div class="hdr-r"><span>{{ user }}</span><a href="/logout" class="btn btn-o btn-sm">Logout</a></div>
+</div>
+<div class="wrap">
+<div class="tabs">
+    <div class="tab active" data-tab="dash">Dashboard</div>
+    <div class="tab" data-tab="inbounds">Inbounds</div>
+    <div class="tab" data-tab="settings">Settings</div>
+</div>
+
+<!-- ═══ DASHBOARD ═══ -->
+<div id="tab-dash" class="tc active">
+    <div class="sbar">
+        <div class="si"><div class="lb">Xray Status</div><div class="vl" id="xr-st">...</div></div>
+        <div class="si"><div class="lb">Xray Version</div><div class="vl" id="xr-ver">—</div></div>
+        <div class="si"><div class="lb">Uptime</div><div class="vl" id="xr-up">—</div></div>
+        <div class="si"><div class="lb">Inbounds</div><div class="vl" id="xr-ib">—</div></div>
+    </div>
+    <div class="card">
+        <h3>Xray Control</h3>
+        <div class="bg">
+            <button class="btn btn-s" onclick="xAct('start')">▶ Start</button>
+            <button class="btn btn-d" onclick="xAct('stop')">⏹ Stop</button>
+            <button class="btn btn-p" onclick="xAct('restart')">↻ Restart</button>
+            <button class="btn btn-o" onclick="installX()" id="btn-inst">Install Xray</button>
+            <button class="btn btn-o" onclick="showConfig()">View Config</button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══ INBOUNDS ═══ -->
+<div id="tab-inbounds" class="tc">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <h3 style="color:var(--accent)">Inbound List</h3>
+        <button class="btn btn-p" onclick="showAddIb()">+ New Inbound</button>
+    </div>
+    <div id="ib-list"></div>
+</div>
+
+<!-- ═══ SETTINGS ═══ -->
+<div id="tab-settings" class="tc">
+    <div class="card">
+        <h3>Panel Settings</h3>
+        <div class="fr3">
+            <div class="fg"><label>Panel Port</label><input type="number" id="s-port"></div>
+            <div class="fg"><label>Panel Host</label><input type="text" id="s-host"></div>
+            <div class="fg"><label>Panel Base Path</label><input type="text" id="s-path"></div>
+        </div>
+        <div class="fr3">
+            <div class="fg"><label>Xray API Port</label><input type="number" id="s-api"></div>
+            <div class="fg"><label>Log Level</label>
+                <select id="s-log"><option>debug</option><option>info</option><option selected>warning</option><option>error</option><option>none</option></select>
+            </div>
+            <div class="fg"><label>Subscription Path</label><input type="text" id="s-sub"></div>
+        </div>
+        <div class="fr">
+            <label class="cb"><input type="checkbox" id="s-bt" checked> Block BitTorrent</label>
+            <label class="cb"><input type="checkbox" id="s-suben" checked> Enable Subscriptions</label>
+        </div>
+        <div class="fg"><label>Custom DNS (JSON)</label><textarea id="s-dns" placeholder='{"servers":["1.1.1.1","8.8.8.8"]}'></textarea></div>
+        <div class="fg"><label>Custom Routing Rules (JSON array)</label><textarea id="s-rr" placeholder='[{"type":"field","domain":["geosite:category-ads"],"outboundTag":"blocked"}]'></textarea></div>
+        <button class="btn btn-p" onclick="saveSets()">Save Settings</button>
+        <span style="color:var(--muted);margin-left:8px;font-size:11px">Restart xray after changing xray-related settings</span>
+    </div>
+    <div class="card">
+        <h3>Change Password</h3>
+        <div class="fr">
+            <div class="fg"><label>Old Password</label><input type="password" id="pw-old"></div>
+            <div class="fg"><label>New Password</label><input type="password" id="pw-new"></div>
+        </div>
+        <button class="btn btn-p" onclick="chPass()">Change</button>
+    </div>
+    <div class="card">
+        <h3>Backup</h3>
+        <button class="btn btn-o" onclick="backup()">Download Database Backup</button>
+    </div>
+</div>
+</div>
+
+<!-- ═══ ADD INBOUND MODAL ═══ -->
+<div class="mo" id="m-add-ib">
+<div class="ml">
+<h3>New Inbound</h3>
+
+<div class="section-title">Protocol</div>
+<div class="fr3">
+    <div class="fg"><label>Protocol</label>
+        <select id="ib-proto" onchange="ibProtoChange()">
+            <option value="vless">VLESS</option>
+            <option value="vmess">VMess</option>
+            <option value="trojan">Trojan</option>
+            <option value="shadowsocks">Shadowsocks</option>
+        </select>
+    </div>
+    <div class="fg"><label>Listen IP (empty = all)</label><input type="text" id="ib-listen" placeholder="0.0.0.0"></div>
+    <div class="fg"><label>Port</label><input type="number" id="ib-port" value="443"></div>
+</div>
+<div class="fg"><label>Remark</label><input type="text" id="ib-remark" placeholder="my-proxy"></div>
+
+<!-- VLESS options -->
+<div id="grp-vless" class="cond show">
+    <div class="section-title">VLESS Settings</div>
+    <div class="fr">
+        <div class="fg"><label>Flow</label>
+            <select id="ib-flow"><option value="">None</option><option value="xtls-rprx-vision" selected>xtls-rprx-vision</option></select>
+        </div>
+        <div class="fg"><label>Decryption</label><input type="text" id="ib-vless-dec" value="none" readonly></div>
+    </div>
+</div>
+
+<!-- Shadowsocks options -->
+<div id="grp-ss" class="cond">
+    <div class="section-title">Shadowsocks Settings</div>
+    <div class="fr">
+        <div class="fg"><label>Encryption</label>
+            <select id="ib-ss-m">
+                <option>chacha20-ietf-poly1305</option><option>aes-256-gcm</option><option>aes-128-gcm</option>
+                <option>2022-blake3-aes-128-gcm</option><option>2022-blake3-aes-256-gcm</option><option>2022-blake3-chacha20-poly1305</option>
+            </select>
+        </div>
+        <div class="fg"><label>Password (auto if empty)</label><input type="text" id="ib-ss-pw"></div>
+    </div>
+    <div class="fg"><label>Network</label>
+        <select id="ib-ss-net"><option value="tcp,udp">TCP + UDP</option><option value="tcp">TCP only</option><option value="udp">UDP only</option></select>
+    </div>
+</div>
+
+<!-- Trojan fallback -->
+<div id="grp-trojan" class="cond">
+    <div class="section-title">Trojan Settings</div>
+    <div class="fr">
+        <div class="fg"><label>Fallback Address</label><input type="text" id="ib-tj-fb-addr" placeholder="127.0.0.1"></div>
+        <div class="fg"><label>Fallback Port</label><input type="number" id="ib-tj-fb-port" value="80"></div>
+    </div>
+</div>
+
+<div id="grp-transport" class="cond show">
+    <div class="section-title">Transport</div>
+    <div class="fr">
+        <div class="fg"><label>Network</label>
+            <select id="ib-net" onchange="ibNetChange()">
+                <option value="tcp">TCP</option><option value="ws">WebSocket</option><option value="grpc">gRPC</option>
+                <option value="h2">HTTP/2</option><option value="httpupgrade">HTTPUpgrade</option>
+            </select>
+        </div>
+        <div class="fg"><label>Security</label>
+            <select id="ib-sec" onchange="ibSecChange()">
+                <option value="none">None</option><option value="reality">Reality</option><option value="tls">TLS</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- TCP -->
+    <div id="grp-tcp" class="cond show">
+        <div class="fr">
+            <div class="fg"><label>Header Type</label>
+                <select id="ib-tcp-ht" onchange="ibTcpHtChange()"><option value="none">none</option><option value="http">http</option></select>
+            </div>
+        </div>
+        <div id="grp-tcp-http" class="cond">
+            <div class="fr">
+                <div class="fg"><label>Request Path</label><input type="text" id="ib-tcp-path" value="/"></div>
+                <div class="fg"><label>Request Host</label><input type="text" id="ib-tcp-host"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- WS -->
+    <div id="grp-ws" class="cond">
+        <div class="fr">
+            <div class="fg"><label>Path</label><input type="text" id="ib-ws-path" value="/ws"></div>
+            <div class="fg"><label>Host Header</label><input type="text" id="ib-ws-host"></div>
+        </div>
+    </div>
+
+    <!-- gRPC -->
+    <div id="grp-grpc" class="cond">
+        <div class="fr">
+            <div class="fg"><label>Service Name</label><input type="text" id="ib-grpc-sn" value="grpc"></div>
+            <div class="fg"><label class="cb" style="margin-top:16px"><input type="checkbox" id="ib-grpc-mm"> Multi Mode</label></div>
+        </div>
+    </div>
+
+    <!-- H2 -->
+    <div id="grp-h2" class="cond">
+        <div class="fr">
+            <div class="fg"><label>Path</label><input type="text" id="ib-h2-path" value="/"></div>
+            <div class="fg"><label>Host</label><input type="text" id="ib-h2-host"></div>
+        </div>
+    </div>
+
+    <!-- HTTPUpgrade -->
+    <div id="grp-hu" class="cond">
+        <div class="fr">
+            <div class="fg"><label>Path</label><input type="text" id="ib-hu-path" value="/"></div>
+            <div class="fg"><label>Host</label><input type="text" id="ib-hu-host"></div>
+        </div>
+    </div>
+
+    <!-- TLS -->
+    <div id="grp-tls" class="cond">
+        <div class="section-title">TLS Settings</div>
+        <div class="fr">
+            <div class="fg"><label>Server Name (SNI)</label><input type="text" id="ib-tls-sni"></div>
+            <div class="fg"><label>uTLS Fingerprint</label>
+                <select id="ib-tls-fp"><option>chrome</option><option>firefox</option><option>safari</option><option>ios</option><option>android</option><option>edge</option><option>random</option><option>randomized</option></select>
+            </div>
+        </div>
+        <div class="fr">
+            <div class="fg"><label>ALPN</label><input type="text" id="ib-tls-alpn" value="h2,http/1.1"></div>
+            <div class="fg"><label class="cb" style="margin-top:16px"><input type="checkbox" id="ib-tls-insec"> Allow Insecure</label></div>
+        </div>
+        <div class="fr">
+            <div class="fg"><label>Certificate File Path</label><input type="text" id="ib-tls-cert" placeholder="/path/to/fullchain.pem"></div>
+            <div class="fg"><label>Key File Path</label><input type="text" id="ib-tls-key" placeholder="/path/to/privkey.pem"></div>
+        </div>
+    </div>
+
+    <!-- Reality -->
+    <div id="grp-reality" class="cond">
+        <div class="section-title">Reality Settings</div>
+        <div class="fr">
+            <div class="fg"><label>Dest (target server)</label><input type="text" id="ib-r-dest" value="google.com:443"></div>
+            <div class="fg"><label>Server Names (SNI, comma-separated)</label><input type="text" id="ib-r-sni" value="google.com"></div>
+        </div>
+        <div class="fr">
+            <div class="fg"><label>Private Key</label><input type="text" id="ib-r-priv" placeholder="Auto-generated"></div>
+            <div class="fg"><label>Public Key</label><input type="text" id="ib-r-pub" placeholder="Auto-generated"></div>
+        </div>
+        <button class="btn btn-o btn-sm" onclick="genRealityKeys()" type="button" style="margin-bottom:8px">🔑 Generate Keys</button>
+        <div class="fr">
+            <div class="fg"><label>Short IDs (comma-separated, auto if empty)</label><input type="text" id="ib-r-sid"></div>
+            <div class="fg"><label>SpiderX</label><input type="text" id="ib-r-spx"></div>
+        </div>
+    </div>
+</div>
+
+<div class="section-title">Sniffing</div>
+<div class="fr3">
+    <label class="cb"><input type="checkbox" id="ib-sniff" checked> Enable Sniffing</label>
+    <div class="fg"><label>Dest Override</label><input type="text" id="ib-sniff-do" value="http,tls,quic"></div>
+    <label class="cb"><input type="checkbox" id="ib-sniff-ro"> Route Only</label>
+</div>
+
+<div class="ma">
+    <button class="btn btn-o" onclick="closeM('m-add-ib')">Cancel</button>
+    <button class="btn btn-p" onclick="createIb()">Create Inbound</button>
+</div>
+</div>
+</div>
+
+<!-- ═══ CLIENT MODAL ═══ -->
+<div class="mo" id="m-add-cl">
+<div class="ml" style="width:450px">
+<h3>Add Client</h3>
+<input type="hidden" id="cl-ib">
+<input type="hidden" id="cl-ib-proto">
+<div class="fg"><label>Email / Name</label><input type="text" id="cl-email" placeholder="user@mail.com"></div>
+<div id="cl-flow-grp" class="fg"><label>Flow</label>
+    <select id="cl-flow"><option value="">None</option><option value="xtls-rprx-vision">xtls-rprx-vision</option></select>
+</div>
+<div class="fr">
+    <div class="fg"><label>Expiry (days, 0=unlimited)</label><input type="number" id="cl-exp" value="30"></div>
+    <div class="fg"><label>Traffic Limit (GB, 0=unlimited)</label><input type="number" id="cl-traf" value="0" step="0.1"></div>
+</div>
+<div class="fg"><label>IP Limit (0=unlimited)</label><input type="number" id="cl-ip" value="0"></div>
+<div class="ma">
+    <button class="btn btn-o" onclick="closeM('m-add-cl')">Cancel</button>
+    <button class="btn btn-p" onclick="addCl()">Add Client</button>
+</div>
+</div>
+</div>
+
+<!-- ═══ LINK MODAL ═══ -->
+<div class="mo" id="m-link">
+<div class="ml" style="width:550px">
+<h3>Connection Link</h3>
+<div id="link-c"></div>
+<div class="ma"><button class="btn btn-o" onclick="closeM('m-link')">Close</button></div>
+</div>
+</div>
+
+<!-- ═══ CONFIG MODAL ═══ -->
+<div class="mo" id="m-config">
+<div class="ml" style="width:700px">
+<h3>Xray Config</h3>
+<textarea id="cfg-view" style="height:400px;font-size:11px" readonly></textarea>
+<div class="ma"><button class="btn btn-o" onclick="closeM('m-config')">Close</button></div>
+</div>
+</div>
+
+<script>
+async function api(p,o={}){const r=await fetch(p,{headers:{'Content-Type':'application/json',...o.headers},...o});if(r.status===401){location.href='/login';return}return r.json()}
+function toast(m,ok=true){const t=document.createElement('div');t.className='toast '+(ok?'ok':'err');t.textContent=m;document.body.appendChild(t);setTimeout(()=>t.remove(),3000)}
+function fmtUp(s){const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return`${d}d ${h}h ${m}m`}
+function closeM(id){document.getElementById(id).classList.remove('show')}
+document.querySelectorAll('.mo').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('show')}));
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.tc').forEach(x=>x.classList.remove('active'));
+    t.classList.add('active');document.getElementById('tab-'+t.dataset.tab).classList.add('active');
+    if(t.dataset.tab==='inbounds')loadIb();if(t.dataset.tab==='settings')loadSets();
+}));
+
+// ── Status ──
+async function loadSt(){
+    const s=await api('/api/status');if(!s)return;
+    const el=document.getElementById('xr-st');
+    el.innerHTML=s.xray_running?`<span class="dot dot-g"></span>Running (${s.pid})`:`<span class="dot dot-r"></span>Stopped`;
+    document.getElementById('xr-up').textContent=fmtUp(s.uptime);
+    const v=await api('/api/xray/version');
+    document.getElementById('xr-ver').textContent=v.installed?v.version:'Not installed';
+    document.getElementById('btn-inst').textContent=v.installed?'Reinstall':'Install Xray';
+}
+async function xAct(a){const r=await api('/api/xray/'+a,{method:'POST'});toast(r.success?a+' OK':'Error',r.success);loadSt()}
+async function installX(){const b=document.getElementById('btn-inst');b.textContent='Installing...';b.disabled=true;const r=await api('/api/xray/install',{method:'POST'});toast(r.success?'Installed: '+r.version:'Failed: '+(r.error||''),r.success);b.disabled=false;loadSt()}
+async function showConfig(){const c=await api('/api/xray/config');document.getElementById('cfg-view').value=JSON.stringify(c,null,2);document.getElementById('m-config').classList.add('show')}
+
+// ── Inbounds ──
+async function loadIb(){
+    const data=await api('/api/inbounds');if(!data)return;
+    document.getElementById('xr-ib').textContent=data.length;
+    if(!data.length){document.getElementById('ib-list').innerHTML='<div class="card" style="text-align:center;color:var(--muted)">No inbounds. Click "+ New Inbound".</div>';return}
+    let h='';
+    for(const ib of data){
+        const st=JSON.parse(ib.stream_settings),net=st.network||'tcp',sec=st.security||'none';
+        h+=`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:6px">
+            <div><span class="badge b-pr">${ib.protocol.toUpperCase()}</span> <span class="badge ${ib.enabled?'b-on':'b-off'}">${ib.enabled?'ON':'OFF'}</span>
+            <strong style="margin-left:6px">${ib.remark||ib.tag}</strong>
+            <span style="color:var(--muted);margin-left:6px;font-size:11px">:${ib.port} | ${net} | ${sec}</span></div>
+            <div class="bg"><button class="btn btn-sm btn-o" onclick="toggleIb(${ib.id})">${ib.enabled?'Disable':'Enable'}</button>
+            <button class="btn btn-sm btn-s" onclick="showAddCl(${ib.id},'${ib.protocol}')">+ Client</button>
+            <button class="btn btn-sm btn-d" onclick="delIb(${ib.id})">Delete</button></div></div>`;
+        if(ib.clients&&ib.clients.length){
+            h+=`<table class="tbl"><tr><th>Email</th><th>UUID/Pass</th><th>Flow</th><th>Status</th><th>Actions</th></tr>`;
+            for(const c of ib.clients){
+                h+=`<tr><td>${c.email}</td><td style="font-family:monospace;font-size:11px" title="${c.uuid}">${c.uuid.substring(0,12)}...</td>
+                <td>${c.flow||'—'}</td><td><span class="badge ${c.enabled?'b-on':'b-off'}">${c.enabled?'ON':'OFF'}</span></td>
+                <td class="bg"><button class="btn btn-sm btn-p" onclick="showLink('${c.id}')">Link</button>
+                <button class="btn btn-sm btn-o" onclick="copySub('${c.id}')">Sub</button>
+                <button class="btn btn-sm btn-w" onclick="rstTraf('${c.id}')">Reset</button>
+                <button class="btn btn-sm btn-d" onclick="delCl('${c.id}')">✕</button></td></tr>`;
+            }
+            h+=`</table>`;
+        }else h+=`<div style="color:var(--muted);font-size:12px">No clients</div>`;
+        h+=`</div>`;
+    }
+    document.getElementById('ib-list').innerHTML=h;
+}
+
+// ── Add Inbound Modal logic ──
+function showAddIb(){document.getElementById('m-add-ib').classList.add('show');ibProtoChange()}
+function condShow(id,show){document.getElementById(id).classList.toggle('show',show);document.getElementById(id).classList.toggle('cond',!show)}
+
+function ibProtoChange(){
+    const p=document.getElementById('ib-proto').value;
+    condShow('grp-vless',p==='vless');condShow('grp-ss',p==='shadowsocks');condShow('grp-trojan',p==='trojan');
+    condShow('grp-transport',p!=='shadowsocks');
+    ibNetChange();ibSecChange();
+}
+function ibNetChange(){
+    const n=document.getElementById('ib-net').value;
+    ['tcp','ws','grpc','h2','hu'].forEach(x=>condShow('grp-'+x,false));
+    if(n==='tcp')condShow('grp-tcp',true);
+    else if(n==='ws')condShow('grp-ws',true);
+    else if(n==='grpc')condShow('grp-grpc',true);
+    else if(n==='h2')condShow('grp-h2',true);
+    else if(n==='httpupgrade')condShow('grp-hu',true);
+}
+function ibSecChange(){
+    const s=document.getElementById('ib-sec').value;
+    condShow('grp-tls',s==='tls');condShow('grp-reality',s==='reality');
+}
+function ibTcpHtChange(){condShow('grp-tcp-http',document.getElementById('ib-tcp-ht').value==='http')}
+
+async function genRealityKeys(){
+    const r=await api('/api/generate-reality-keys',{method:'POST'});
+    if(r.private_key){document.getElementById('ib-r-priv').value=r.private_key;document.getElementById('ib-r-pub').value=r.public_key;toast('Keys generated')}
+}
+
+async function createIb(){
+    const body={
+        protocol:document.getElementById('ib-proto').value,
+        port:+document.getElementById('ib-port').value,
+        listen:document.getElementById('ib-listen').value,
+        remark:document.getElementById('ib-remark').value,
+        network:document.getElementById('ib-net').value,
+        security:document.getElementById('ib-sec').value,
+        flow:document.getElementById('ib-flow').value,
+        vless_decryption:document.getElementById('ib-vless-dec').value,
+        tcp_header_type:document.getElementById('ib-tcp-ht').value,
+        tcp_header_request_path:document.getElementById('ib-tcp-path').value,
+        tcp_header_request_host:document.getElementById('ib-tcp-host').value,
+        ws_path:document.getElementById('ib-ws-path').value,
+        ws_host:document.getElementById('ib-ws-host').value,
+        grpc_service_name:document.getElementById('ib-grpc-sn').value,
+        grpc_multi_mode:document.getElementById('ib-grpc-mm').checked,
+        h2_path:document.getElementById('ib-h2-path').value,
+        h2_host:document.getElementById('ib-h2-host').value,
+        httpupgrade_path:document.getElementById('ib-hu-path').value,
+        httpupgrade_host:document.getElementById('ib-hu-host').value,
+        tls_server_name:document.getElementById('ib-tls-sni').value,
+        tls_fingerprint:document.getElementById('ib-tls-fp').value,
+        tls_alpn:document.getElementById('ib-tls-alpn').value,
+        tls_allow_insecure:document.getElementById('ib-tls-insec').checked,
+        tls_cert_file:document.getElementById('ib-tls-cert').value,
+        tls_key_file:document.getElementById('ib-tls-key').value,
+        reality_dest:document.getElementById('ib-r-dest').value,
+        reality_server_names:document.getElementById('ib-r-sni').value,
+        reality_private_key:document.getElementById('ib-r-priv').value,
+        reality_public_key:document.getElementById('ib-r-pub').value,
+        reality_short_ids:document.getElementById('ib-r-sid').value,
+        reality_spider_x:document.getElementById('ib-r-spx').value,
+        ss_method:document.getElementById('ib-ss-m').value,
+        ss_password:document.getElementById('ib-ss-pw').value,
+        ss_network:document.getElementById('ib-ss-net').value,
+        trojan_fallback_addr:document.getElementById('ib-tj-fb-addr').value,
+        trojan_fallback_port:+document.getElementById('ib-tj-fb-port').value||0,
+        sniffing_enabled:document.getElementById('ib-sniff').checked,
+        sniffing_dest_override:document.getElementById('ib-sniff-do').value,
+        sniffing_route_only:document.getElementById('ib-sniff-ro').checked,
+    };
+    const r=await api('/api/inbounds',{method:'POST',body:JSON.stringify(body)});
+    if(r.success){toast('Created');closeM('m-add-ib');loadIb();loadSt()}else toast(r.detail||'Error',false);
+}
+
+async function delIb(id){if(!confirm('Delete?'))return;await api('/api/inbounds/'+id,{method:'DELETE'});toast('Deleted');loadIb()}
+async function toggleIb(id){await api('/api/inbounds/'+id+'/toggle',{method:'PUT'});loadIb()}
+
+// ── Clients ──
+function showAddCl(id,proto){
+    document.getElementById('cl-ib').value=id;
+    document.getElementById('cl-ib-proto').value=proto;
+    document.getElementById('cl-email').value='';
+    document.getElementById('cl-flow-grp').style.display=proto==='vless'?'':'none';
+    document.getElementById('m-add-cl').classList.add('show');
+}
+async function addCl(){
+    const r=await api('/api/inbounds/'+document.getElementById('cl-ib').value+'/clients',{method:'POST',body:JSON.stringify({
+        email:document.getElementById('cl-email').value,
+        flow:document.getElementById('cl-flow').value,
+        expiry_days:+document.getElementById('cl-exp').value||0,
+        traffic_limit_gb:+document.getElementById('cl-traf').value||0,
+        ip_limit:+document.getElementById('cl-ip').value||0,
+    })});
+    if(r.success){toast('Added');closeM('m-add-cl');loadIb()}else toast(r.detail||'Error',false);
+}
+async function delCl(id){if(!confirm('Delete client?'))return;await api('/api/clients/'+id,{method:'DELETE'});toast('Deleted');loadIb()}
+async function rstTraf(id){await api('/api/clients/'+id+'/reset-traffic',{method:'POST'});toast('Traffic reset');loadIb()}
+
+async function showLink(cid){
+    const r=await api('/api/clients/'+cid+'/link');if(!r)return;
+    const enc=encodeURIComponent(r.link);
+    document.getElementById('link-c').innerHTML=`<div class="lbox">${r.link}<button class="cpb" onclick="cpTxt(this,'${enc}')">Copy</button></div>
+    <p style="font-size:11px;color:var(--muted);margin-top:6px">${r.protocol.toUpperCase()} | ${r.host}:${r.port}</p>
+    <p style="font-size:11px;margin-top:4px">Sub link: <code>${location.origin}/sub/${cid}</code> <button class="btn btn-sm btn-o" onclick="cpTxt(this,'${encodeURIComponent(location.origin+'/sub/'+cid)}')">Copy Sub</button></p>`;
+    document.getElementById('m-link').classList.add('show');
+}
+function cpTxt(btn,enc){navigator.clipboard.writeText(decodeURIComponent(enc));btn.textContent='✓';setTimeout(()=>btn.textContent='Copy',1500)}
+function copySub(cid){navigator.clipboard.writeText(location.origin+'/sub/'+cid);toast('Sub link copied')}
+
+// ── Settings ──
+async function loadSets(){
+    const s=await api('/api/settings');if(!s)return;
+    document.getElementById('s-port').value=s.panel_port;document.getElementById('s-host').value=s.panel_host;
+    document.getElementById('s-path').value=s.panel_path;document.getElementById('s-api').value=s.xray_api_port;
+    document.getElementById('s-log').value=s.xray_log_level;document.getElementById('s-sub').value=s.sub_path;
+    document.getElementById('s-bt').checked=s.block_bittorrent;document.getElementById('s-suben').checked=s.sub_enable;
+    document.getElementById('s-dns').value=s.custom_dns;document.getElementById('s-rr').value=s.custom_routing_rules;
+}
+async function saveSets(){
+    const r=await api('/api/settings',{method:'POST',body:JSON.stringify({
+        panel_port:+document.getElementById('s-port').value,panel_host:document.getElementById('s-host').value,
+        panel_path:document.getElementById('s-path').value,xray_api_port:+document.getElementById('s-api').value,
+        xray_log_level:document.getElementById('s-log').value,sub_path:document.getElementById('s-sub').value,
+        block_bittorrent:document.getElementById('s-bt').checked,sub_enable:document.getElementById('s-suben').checked,
+        custom_dns:document.getElementById('s-dns').value,custom_routing_rules:document.getElementById('s-rr').value,
+    })});toast(r.success?'Saved':'Error',r.success);
+}
+async function chPass(){
+    const r=await api('/api/change-password',{method:'POST',body:JSON.stringify({old_password:document.getElementById('pw-old').value,new_password:document.getElementById('pw-new').value})});
+    if(r.success){toast('Changed');document.getElementById('pw-old').value='';document.getElementById('pw-new').value=''}else toast(r.detail||'Error',false);
+}
+async function backup(){
+    const r=await api('/api/backup');if(r.database){
+        const a=document.createElement('a');a.href='data:application/octet-stream;base64,'+r.database;
+        a.download='selfray-backup-'+new Date().toISOString().slice(0,10)+'.db';a.click();toast('Downloaded')}
+}
+
+loadSt();loadIb();setInterval(loadSt,15000);
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+services:
+  selfray-ui:
+    build: .
+    container_name: selfray-ui
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./data:/opt/selfray-ui/data
+    environment:
+      - TZ=UTC
