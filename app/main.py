@@ -779,6 +779,61 @@ async def api_toggle_inbound(inbound_id: int, user: str = Depends(get_current_us
     return {"success": True, "enabled": bool(new)}
 
 
+@app.get("/api/inbounds/{inbound_id}")
+async def api_get_inbound(inbound_id: int, user: str = Depends(get_current_user)):
+    conn = get_db()
+    row = conn.execute("SELECT * FROM inbounds WHERE id=?", (inbound_id,)).fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(404)
+    ib = dict(row)
+    ib["stream_settings_parsed"] = json.loads(ib["stream_settings"])
+    ib["settings_parsed"] = json.loads(ib["settings"])
+    ib["sniffing_parsed"] = json.loads(ib["sniffing"]) if ib.get("sniffing") else {}
+    return ib
+
+
+@app.put("/api/inbounds/{inbound_id}")
+async def api_edit_inbound(inbound_id: int, data: InboundCreate, user: str = Depends(get_current_user)):
+    conn = get_db()
+    row = conn.execute("SELECT * FROM inbounds WHERE id=?", (inbound_id,)).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(404)
+
+    settings = _build_protocol_settings(data)
+    stream = _build_stream_settings(data)
+    sniffing = {"enabled": data.sniffing_enabled}
+    if data.sniffing_dest_override:
+        sniffing["destOverride"] = [x.strip() for x in data.sniffing_dest_override.split(",") if x.strip()]
+    if data.sniffing_route_only:
+        sniffing["routeOnly"] = True
+
+    clients_rows = conn.execute("SELECT * FROM clients WHERE inbound_id=?", (inbound_id,)).fetchall()
+    if data.protocol in ("vless", "vmess"):
+        settings["clients"] = []
+        for c in clients_rows:
+            cl = {"id": c["uuid"], "email": c["email"]}
+            if data.protocol == "vless" and c["flow"]:
+                cl["flow"] = c["flow"]
+            if data.protocol == "vmess":
+                cl["alterId"] = 0
+            settings["clients"].append(cl)
+    elif data.protocol == "trojan":
+        settings["clients"] = []
+        for c in clients_rows:
+            settings["clients"].append({"password": c["uuid"], "email": c["email"]})
+
+    conn.execute("""UPDATE inbounds SET protocol=?, port=?, listen=?, settings=?, stream_settings=?,
+        sniffing=?, remark=? WHERE id=?""",
+        (data.protocol, data.port, data.listen, json.dumps(settings), json.dumps(stream),
+         json.dumps(sniffing), data.remark, inbound_id))
+    conn.commit()
+    conn.close()
+    restart_xray()
+    return {"success": True}
+
+
 def _build_protocol_settings(data: InboundCreate) -> dict:
     if data.protocol == "vless":
         s = {"clients": [], "decryption": data.vless_decryption or "none"}

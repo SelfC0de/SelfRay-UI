@@ -182,7 +182,7 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 <!-- ADD INBOUND MODAL -->
 <div class="mo" id="m-add-ib">
 <div class="ml">
-<h3>New Inbound</h3>
+<h3 id="ib-modal-title">New Inbound</h3>
 <div class="section-title">Protocol</div>
 <div class="fr3">
     <div class="fg"><label>Protocol</label>
@@ -275,7 +275,7 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 </div>
 <div class="ma">
     <button class="btn btn-o" onclick="closeM('m-add-ib')">Cancel</button>
-    <button class="btn btn-p" onclick="createIb()">Create Inbound</button>
+    <button class="btn btn-p" id="ib-submit-btn" onclick="submitIb()">Create Inbound</button>
 </div>
 </div>
 </div>
@@ -331,6 +331,13 @@ function toast(m,type='ok'){
     box.appendChild(t);
     setTimeout(()=>{t.classList.add('hiding');setTimeout(()=>t.remove(),300)},3000);
 }
+function cpText(text){
+    if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(text);return}
+    const ta=document.createElement('textarea');ta.value=text;ta.style.cssText='position:fixed;left:-9999px;top:-9999px';
+    document.body.appendChild(ta);ta.focus();ta.select();
+    try{document.execCommand('copy')}catch(e){}
+    document.body.removeChild(ta);
+}
 function fmtUp(s){const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return d+'d '+h+'h '+m+'m'}
 function closeM(id){const m=document.getElementById(id);m.classList.remove('show')}
 document.querySelectorAll('.mo').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('show')}));
@@ -368,6 +375,7 @@ async function loadIb(){
         h+=' <strong style="margin-left:6px">'+(ib.remark||ib.tag)+'</strong>';
         h+='<span style="color:var(--muted);margin-left:8px;font-size:11px">:'+ib.port+' | '+net+' | '+sec+'</span></div>';
         h+='<div class="bg"><button class="btn btn-sm btn-o" onclick="toggleIb('+ib.id+')">'+(ib.enabled?'Disable':'Enable')+'</button>';
+        h+='<button class="btn btn-sm btn-p" onclick="editIb('+ib.id+')">Edit</button>';
         h+='<button class="btn btn-sm btn-s" onclick="showAddCl('+ib.id+',\''+ib.protocol+'\')">+ Client</button>';
         h+='<button class="btn btn-sm btn-d" onclick="delIb('+ib.id+')">Delete</button></div></div>';
         if(ib.clients&&ib.clients.length){
@@ -387,32 +395,18 @@ async function loadIb(){
     document.getElementById('ib-list').innerHTML=h;
 }
 
-function showAddIb(){document.getElementById('m-add-ib').classList.add('show');if(serverIP)document.getElementById('ib-listen').value=serverIP;ibProtoChange()}
-function condShow(id,show){document.getElementById(id).classList.toggle('show',show);document.getElementById(id).classList.toggle('cond',!show)}
-function ibProtoChange(){
-    const p=document.getElementById('ib-proto').value;
-    condShow('grp-vless',p==='vless');condShow('grp-ss',p==='shadowsocks');condShow('grp-trojan',p==='trojan');
-    condShow('grp-transport',p!=='shadowsocks');ibNetChange();ibSecChange();
+let editingIbId=null;
+function showAddIb(){
+    editingIbId=null;
+    document.getElementById('ib-modal-title').textContent='New Inbound';
+    document.getElementById('ib-submit-btn').textContent='Create Inbound';
+    document.getElementById('ib-proto').disabled=false;
+    document.getElementById('m-add-ib').classList.add('show');
+    if(serverIP)document.getElementById('ib-listen').value=serverIP;
+    ibProtoChange();
 }
-function ibNetChange(){
-    const n=document.getElementById('ib-net').value;
-    ['tcp','ws','grpc','h2','hu'].forEach(x=>condShow('grp-'+x,false));
-    if(n==='tcp')condShow('grp-tcp',true);else if(n==='ws')condShow('grp-ws',true);else if(n==='grpc')condShow('grp-grpc',true);else if(n==='h2')condShow('grp-h2',true);else if(n==='httpupgrade')condShow('grp-hu',true);
-}
-function ibSecChange(){const s=document.getElementById('ib-sec').value;condShow('grp-tls',s==='tls');condShow('grp-reality',s==='reality')}
-function ibTcpHtChange(){condShow('grp-tcp-http',document.getElementById('ib-tcp-ht').value==='http')}
-
-async function genRealityKeys(){
-    try{
-        const r=await fetch('/api/generate-reality-keys',{method:'POST',headers:{'Content-Type':'application/json'}});
-        const data=await r.json();
-        if(r.ok&&data.private_key){document.getElementById('ib-r-priv').value=data.private_key;document.getElementById('ib-r-pub').value=data.public_key;toast('Keys generated','ok')}
-        else toast(data.detail||'Failed','err');
-    }catch(e){toast('Error: '+e.message,'err')}
-}
-
-async function createIb(){
-    const body={
+function getIbBody(){
+    return {
         protocol:document.getElementById('ib-proto').value,port:+document.getElementById('ib-port').value,
         listen:document.getElementById('ib-listen').value,remark:document.getElementById('ib-remark').value,
         network:document.getElementById('ib-net').value,security:document.getElementById('ib-sec').value,
@@ -434,8 +428,78 @@ async function createIb(){
         trojan_fallback_port:+document.getElementById('ib-tj-fb-port').value||0,sniffing_enabled:document.getElementById('ib-sniff').checked,
         sniffing_dest_override:document.getElementById('ib-sniff-do').value,sniffing_route_only:document.getElementById('ib-sniff-ro').checked,
     };
-    const r=await api('/api/inbounds',{method:'POST',body:JSON.stringify(body)});
-    if(r.success){toast('Inbound created','ok');closeM('m-add-ib');loadIb();loadSt()}else toast(r.detail||'Error','err');
+}
+async function submitIb(){
+    const body=getIbBody();
+    if(editingIbId){
+        const r=await api('/api/inbounds/'+editingIbId,{method:'PUT',body:JSON.stringify(body)});
+        if(r.success){toast('Inbound updated','ok');closeM('m-add-ib');loadIb();loadSt()}else toast(r.detail||'Error','err');
+    }else{
+        const r=await api('/api/inbounds',{method:'POST',body:JSON.stringify(body)});
+        if(r.success){toast('Inbound created','ok');closeM('m-add-ib');loadIb();loadSt()}else toast(r.detail||'Error','err');
+    }
+}
+async function editIb(id){
+    editingIbId=id;
+    const ib=await api('/api/inbounds/'+id);if(!ib)return;
+    const st=ib.stream_settings_parsed||{};const sets=ib.settings_parsed||{};const sn=ib.sniffing_parsed||{};
+    document.getElementById('ib-modal-title').textContent='Edit Inbound #'+id;
+    document.getElementById('ib-submit-btn').textContent='Save Changes';
+    document.getElementById('ib-proto').value=ib.protocol;document.getElementById('ib-proto').disabled=true;
+    document.getElementById('ib-port').value=ib.port;
+    document.getElementById('ib-listen').value=ib.listen||'';
+    document.getElementById('ib-remark').value=ib.remark||'';
+    document.getElementById('ib-net').value=st.network||'tcp';
+    document.getElementById('ib-sec').value=st.security||'none';
+    if(ib.protocol==='vless'){document.getElementById('ib-flow').value=sets.flow||sets.clients?.[0]?.flow||''}
+    const rs=st.realitySettings||{};const ts=st.tlsSettings||{};
+    document.getElementById('ib-r-dest').value=rs.dest||'google.com:443';
+    document.getElementById('ib-r-sni').value=(rs.serverNames||[]).join(',');
+    document.getElementById('ib-r-priv').value=rs.privateKey||'';
+    document.getElementById('ib-r-pub').value=rs.publicKey||'';
+    document.getElementById('ib-r-sid').value=(rs.shortIds||[]).join(',');
+    document.getElementById('ib-r-spx').value=rs.spiderX||'';
+    document.getElementById('ib-r-fp').value=rs.fingerprint||'chrome';
+    document.getElementById('ib-tls-sni').value=ts.serverName||'';
+    document.getElementById('ib-tls-fp').value=ts.fingerprint||'chrome';
+    document.getElementById('ib-tls-alpn').value=(ts.alpn||[]).join(',');
+    document.getElementById('ib-tls-insec').checked=!!ts.allowInsecure;
+    const ws=st.wsSettings||{};const grpc=st.grpcSettings||{};const h2=st.httpSettings||{};const hu=st.httpupgradeSettings||{};const tcp=st.tcpSettings||{};
+    document.getElementById('ib-ws-path').value=ws.path||'/ws';
+    document.getElementById('ib-ws-host').value=(ws.headers||{}).Host||'';
+    document.getElementById('ib-grpc-sn').value=grpc.serviceName||'grpc';
+    document.getElementById('ib-grpc-mm').checked=!!grpc.multiMode;
+    document.getElementById('ib-h2-path').value=h2.path||'/';
+    document.getElementById('ib-h2-host').value=(h2.host||[])[0]||'';
+    document.getElementById('ib-hu-path').value=hu.path||'/';
+    document.getElementById('ib-hu-host').value=hu.host||'';
+    document.getElementById('ib-tcp-ht').value=(tcp.header||{}).type||'none';
+    document.getElementById('ib-sniff').checked=sn.enabled!==false;
+    document.getElementById('ib-sniff-do').value=(sn.destOverride||['http','tls','quic']).join(',');
+    document.getElementById('ib-sniff-ro').checked=!!sn.routeOnly;
+    ibProtoChange();ibNetChange();ibSecChange();ibTcpHtChange();
+    document.getElementById('m-add-ib').classList.add('show');
+}
+function condShow(id,show){document.getElementById(id).classList.toggle('show',show);document.getElementById(id).classList.toggle('cond',!show)}
+    const p=document.getElementById('ib-proto').value;
+    condShow('grp-vless',p==='vless');condShow('grp-ss',p==='shadowsocks');condShow('grp-trojan',p==='trojan');
+    condShow('grp-transport',p!=='shadowsocks');ibNetChange();ibSecChange();
+}
+function ibNetChange(){
+    const n=document.getElementById('ib-net').value;
+    ['tcp','ws','grpc','h2','hu'].forEach(x=>condShow('grp-'+x,false));
+    if(n==='tcp')condShow('grp-tcp',true);else if(n==='ws')condShow('grp-ws',true);else if(n==='grpc')condShow('grp-grpc',true);else if(n==='h2')condShow('grp-h2',true);else if(n==='httpupgrade')condShow('grp-hu',true);
+}
+function ibSecChange(){const s=document.getElementById('ib-sec').value;condShow('grp-tls',s==='tls');condShow('grp-reality',s==='reality')}
+function ibTcpHtChange(){condShow('grp-tcp-http',document.getElementById('ib-tcp-ht').value==='http')}
+
+async function genRealityKeys(){
+    try{
+        const r=await fetch('/api/generate-reality-keys',{method:'POST',headers:{'Content-Type':'application/json'}});
+        const data=await r.json();
+        if(r.ok&&data.private_key){document.getElementById('ib-r-priv').value=data.private_key;document.getElementById('ib-r-pub').value=data.public_key;toast('Keys generated','ok')}
+        else toast(data.detail||'Failed','err');
+    }catch(e){toast('Error: '+e.message,'err')}
 }
 
 async function delIb(id){if(!confirm('Delete this inbound?'))return;await api('/api/inbounds/'+id,{method:'DELETE'});toast('Deleted','info');loadIb()}
@@ -484,12 +548,12 @@ async function showLink(cid){
     html+='<div style="font-size:10px;color:var(--muted);margin-top:2px">'+r.protocol.toUpperCase()+' | :'+r.port+'</div>';
     html+='</div></div>';
     document.getElementById('link-c').innerHTML=html;
-    document.getElementById('btn-cp-link').onclick=function(){navigator.clipboard.writeText(r.link);toast('Link copied','ok');this.textContent='\u2713 Copied';setTimeout(()=>this.textContent='Copy Connection Link',2000)};
-    document.getElementById('btn-cp-sub').onclick=function(){navigator.clipboard.writeText(subLink);toast('Sub URL copied','ok');this.textContent='\u2713 Copied';setTimeout(()=>this.textContent='Copy Subscription URL',2000)};
+    document.getElementById('btn-cp-link').onclick=function(){cpText(r.link);toast('Link copied','ok');this.textContent='\u2713 Copied';setTimeout(()=>this.textContent='Copy Connection Link',2000)};
+    document.getElementById('btn-cp-sub').onclick=function(){cpText(subLink);toast('Sub URL copied','ok');this.textContent='\u2713 Copied';setTimeout(()=>this.textContent='Copy Subscription URL',2000)};
     try{new QRCode(document.getElementById('qr-code'),{text:r.link,width:160,height:160,colorDark:'#000',colorLight:'#fff',correctLevel:QRCode.CorrectLevel.M})}catch(e){}
     document.getElementById('m-link').classList.add('show');
 }
-function copySub(cid){navigator.clipboard.writeText(location.origin+'/sub/'+cid);toast('Sub link copied','ok')}
+function copySub(cid){cpText(location.origin+'/sub/'+cid);toast('Sub link copied','ok')}
 
 async function loadSets(){
     const s=await api('/api/settings');if(!s)return;
