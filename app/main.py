@@ -388,19 +388,38 @@ async def panel(request: Request, user: str = Depends(get_current_user)):
 # ═══════════════════════════════════════════
 
 @app.get("/api/status")
-async def api_status(user: str = Depends(get_current_user)):
+async def api_status(request: Request, user: str = Depends(get_current_user)):
     uptime = 0
     try:
         with open("/proc/uptime") as f:
             uptime = int(float(f.read().split()[0]))
     except:
         pass
+    server_ip = _get_server_ip(request)
     return {
         "xray_running": is_xray_running(),
         "xray_installed": XRAY_BIN.exists(),
         "pid": xray_process.pid if is_xray_running() else None,
-        "uptime": uptime
+        "uptime": uptime,
+        "server_ip": server_ip
     }
+
+
+def _get_server_ip(request: Request = None):
+    ip = ""
+    if request:
+        host = request.headers.get("host", "").split(":")[0]
+        if host and host not in ("0.0.0.0", "127.0.0.1", "localhost"):
+            return host
+    try:
+        import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+    except:
+        pass
+    return ip
 
 
 # ═══════════════════════════════════════════

@@ -340,11 +340,13 @@ document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
     if(t.dataset.tab==='inbounds')loadIb();if(t.dataset.tab==='settings')loadSets();
 }));
 
+let serverIP='';
 async function loadSt(){
     const s=await api('/api/status');if(!s)return;
     const el=document.getElementById('xr-st');
     el.innerHTML=s.xray_running?'<span class="dot dot-g"></span>Running ('+s.pid+')':'<span class="dot dot-r"></span>Stopped';
     document.getElementById('xr-up').textContent=fmtUp(s.uptime);
+    if(s.server_ip)serverIP=s.server_ip;
     const v=await api('/api/xray/version');
     document.getElementById('xr-ver').textContent=v.installed?v.version:'Not installed';
     document.getElementById('btn-inst').textContent=v.installed?'Reinstall':'Install Xray';
@@ -384,7 +386,7 @@ async function loadIb(){
     document.getElementById('ib-list').innerHTML=h;
 }
 
-function showAddIb(){document.getElementById('m-add-ib').classList.add('show');ibProtoChange()}
+function showAddIb(){document.getElementById('m-add-ib').classList.add('show');if(serverIP)document.getElementById('ib-listen').value=serverIP;ibProtoChange()}
 function condShow(id,show){document.getElementById(id).classList.toggle('show',show);document.getElementById(id).classList.toggle('cond',!show)}
 function ibProtoChange(){
     const p=document.getElementById('ib-proto').value;
