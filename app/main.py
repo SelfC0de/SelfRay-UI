@@ -293,6 +293,7 @@ def is_xray_running() -> bool:
 def _generate_reality_keys():
     try:
         result = subprocess.run([str(XRAY_BIN), "x25519"], capture_output=True, text=True, timeout=10)
+        logger.info(f"x25519 output: {result.stdout.strip()}")
         lines = result.stdout.strip().split("\n")
         priv = pub = ""
         for line in lines:
@@ -300,8 +301,12 @@ def _generate_reality_keys():
                 priv = line.split(":")[-1].strip()
             elif "Public" in line:
                 pub = line.split(":")[-1].strip()
-        return priv, pub
-    except:
+        if priv and pub:
+            return priv, pub
+        logger.error(f"x25519 parsing failed. stdout={result.stdout} stderr={result.stderr}")
+        return "", ""
+    except Exception as e:
+        logger.error(f"x25519 failed: {e}")
         return "", ""
 
 
@@ -545,6 +550,7 @@ class InboundCreate(BaseModel):
     reality_public_key: str = ""
     reality_short_ids: str = ""
     reality_spider_x: str = ""
+    reality_fingerprint: str = "chrome"
     # VLESS
     flow: str = ""
     vless_decryption: str = "none"
@@ -605,6 +611,15 @@ async def api_get_inbound(inbound_id: int, user: str = Depends(get_current_user)
 
 @app.post("/api/inbounds")
 async def api_create_inbound(data: InboundCreate, user: str = Depends(get_current_user)):
+    if data.security == "reality" and not data.reality_private_key and not data.reality_public_key:
+        if not XRAY_BIN.exists():
+            raise HTTPException(400, "Install Xray first before creating Reality inbound (need xray x25519 for key generation)")
+        priv, pub = _generate_reality_keys()
+        if not priv or not pub:
+            raise HTTPException(400, "Failed to generate Reality keys. Check xray binary.")
+        data.reality_private_key = priv
+        data.reality_public_key = pub
+
     tag = f"{data.protocol}-{data.port}-{secrets.token_hex(3)}"
     settings = _build_protocol_settings(data)
     stream = _build_stream_settings(data)
@@ -791,6 +806,8 @@ def _build_stream_settings(data: InboundCreate) -> dict:
         pub = data.reality_public_key
         if not priv or not pub:
             priv, pub = _generate_reality_keys()
+        if not priv or not pub:
+            logger.error("Reality keys empty! Xray binary may be missing or broken.")
 
         short_ids = [s.strip() for s in data.reality_short_ids.split(",") if s.strip()] if data.reality_short_ids else [secrets.token_hex(4)]
         server_names = [s.strip() for s in data.reality_server_names.split(",") if s.strip()]
@@ -802,7 +819,8 @@ def _build_stream_settings(data: InboundCreate) -> dict:
             "serverNames": server_names,
             "privateKey": priv,
             "shortIds": short_ids,
-            "publicKey": pub
+            "publicKey": pub,
+            "fingerprint": data.reality_fingerprint or "chrome"
         }
         if data.reality_spider_x:
             stream["realitySettings"]["spiderX"] = data.reality_spider_x
@@ -813,7 +831,11 @@ def _build_stream_settings(data: InboundCreate) -> dict:
 # ── API: Generate Reality Keys ──
 @app.post("/api/generate-reality-keys")
 async def api_gen_reality_keys(user: str = Depends(get_current_user)):
+    if not XRAY_BIN.exists():
+        raise HTTPException(400, "Install Xray first (Dashboard → Install Xray)")
     priv, pub = _generate_reality_keys()
+    if not priv or not pub:
+        raise HTTPException(400, "Key generation failed. Check xray binary.")
     return {"private_key": priv, "public_key": pub}
 
 
@@ -949,10 +971,10 @@ def _generate_link(protocol, client, inbound, stream, settings, host):
             p.append(f"flow={flow}")
         if security == "reality":
             rs = stream.get("realitySettings", {})
-            if rs.get("publicKey"): p.append(f"pbk={rs['publicKey']}")
+            p.append(f"pbk={rs.get('publicKey', '')}")
             if rs.get("shortIds"): p.append(f"sid={rs['shortIds'][0]}")
             if rs.get("serverNames"): p.append(f"sni={rs['serverNames'][0]}")
-            p.append(f"fp=chrome")
+            p.append(f"fp={rs.get('fingerprint', 'chrome')}")
             if rs.get("spiderX"): p.append(f"spx={urllib.parse.quote(rs['spiderX'])}")
         elif security == "tls":
             ts = stream.get("tlsSettings", {})
@@ -1001,10 +1023,10 @@ def _generate_link(protocol, client, inbound, stream, settings, host):
             if ts.get("alpn"): p.append(f"alpn={urllib.parse.quote(','.join(ts['alpn']))}")
         elif security == "reality":
             rs = stream.get("realitySettings", {})
-            if rs.get("publicKey"): p.append(f"pbk={rs['publicKey']}")
+            p.append(f"pbk={rs.get('publicKey', '')}")
             if rs.get("shortIds"): p.append(f"sid={rs['shortIds'][0]}")
             if rs.get("serverNames"): p.append(f"sni={rs['serverNames'][0]}")
-            p.append("fp=chrome")
+            p.append(f"fp={rs.get('fingerprint', 'chrome')}")
         _add_transport_params(p, network, stream)
         return f"trojan://{uid}@{host}:{port}?{'&'.join(p)}#{remark}"
 
