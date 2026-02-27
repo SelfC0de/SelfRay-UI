@@ -90,7 +90,7 @@ class SelfRayBot:
 
     def start(self):
         if self._running:
-            return
+            self.stop()
         if not self.token or not self.chat_id:
             return
         self._running = True
@@ -100,6 +100,9 @@ class SelfRayBot:
 
     def stop(self):
         self._running = False
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=5)
+        self._thread = None
 
     def _poll_loop(self):
         while self._running:
@@ -107,16 +110,23 @@ class SelfRayBot:
                 time.sleep(5)
                 continue
             try:
-                result = self._api("getUpdates", {"offset": self._offset, "timeout": 20})
+                result = self._api("getUpdates", {"offset": self._offset, "timeout": 10})
+                if not self._running:
+                    break
                 if not result or not result.get("ok"):
-                    time.sleep(5)
+                    time.sleep(3)
                     continue
                 for update in result.get("result", []):
+                    if not self._running:
+                        break
                     self._offset = update["update_id"] + 1
-                    self._handle_update(update)
+                    try:
+                        self._handle_update(update)
+                    except Exception as e:
+                        logger.error(f"Handle update error: {e}")
             except Exception as e:
                 logger.error(f"Poll error: {e}")
-                time.sleep(5)
+                time.sleep(3)
 
     def _handle_update(self, update):
         if "callback_query" in update:
@@ -159,7 +169,10 @@ class SelfRayBot:
         self.send("🏠 <b>SelfRay-UI</b> — Main Menu\n\nChoose an action:", chat_id, reply_markup=kb)
 
     def _handle_callback(self, cb):
-        chat_id = cb["message"]["chat"]["id"]
+        msg = cb.get("message")
+        if not msg:
+            return
+        chat_id = msg["chat"]["id"]
         if not self._is_admin(chat_id):
             self.answer_callback(cb["id"], "Access denied")
             return
