@@ -732,14 +732,18 @@ async def api_get_inbound(inbound_id: int, user: str = Depends(get_current_user)
     return {**dict(row), "clients": [dict(c) for c in clients]}
 
 
-@app.post("/api/inbounds")
-async def api_create_inbound(data: InboundCreate, user: str = Depends(get_current_user)):
+def core_create_inbound(protocol, port, listen="", remark="", network="tcp", security="none", flow="", client_name="", country="", **kwargs):
+    data = InboundCreate(
+        protocol=protocol, port=port, listen=listen, remark=remark,
+        network=network, security=security, flow=flow, client_name=client_name, country=country,
+        **{k: v for k, v in kwargs.items() if k in InboundCreate.__fields__}
+    )
     if data.security == "reality" and not data.reality_private_key and not data.reality_public_key:
         if not XRAY_BIN.exists():
-            raise HTTPException(400, "Install Xray first before creating Reality inbound (need xray x25519 for key generation)")
+            return {"success": False, "error": "Install Xray first (need xray x25519)"}
         priv, pub = _generate_reality_keys()
         if not priv or not pub:
-            raise HTTPException(400, "Failed to generate Reality keys. Check xray binary.")
+            return {"success": False, "error": "Failed to generate Reality keys"}
         data.reality_private_key = priv
         data.reality_public_key = pub
 
@@ -754,20 +758,21 @@ async def api_create_inbound(data: InboundCreate, user: str = Depends(get_curren
         sniffing["routeOnly"] = True
 
     conn = get_db()
-    remark = data.remark
+    rm = data.remark
     if data.country:
-        remark = f"{data.country} {remark}".strip() if remark else data.country
+        rm = f"{data.country} {rm}".strip() if rm else data.country
     try:
         conn.execute(
             "INSERT INTO inbounds (tag, protocol, listen, port, settings, stream_settings, sniffing, remark) VALUES (?,?,?,?,?,?,?,?)",
-            (tag, data.protocol, data.listen, data.port, json.dumps(settings), json.dumps(stream), json.dumps(sniffing), remark)
+            (tag, data.protocol, data.listen, data.port, json.dumps(settings), json.dumps(stream), json.dumps(sniffing), rm)
         )
         conn.commit()
         inbound_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     except sqlite3.IntegrityError:
         conn.close()
-        raise HTTPException(400, f"Tag conflict: {tag}")
+        return {"success": False, "error": f"Tag conflict: {tag}"}
 
+    link = ""
     if data.protocol != "shadowsocks":
         client_uuid = str(uuid.uuid4())
         client_id = secrets.token_hex(8)
@@ -777,10 +782,25 @@ async def api_create_inbound(data: InboundCreate, user: str = Depends(get_curren
             (client_id, inbound_id, cname, client_uuid, data.flow if data.protocol == "vless" else "")
         )
         conn.commit()
+        try:
+            ib_row = conn.execute("SELECT * FROM inbounds WHERE id=?", (inbound_id,)).fetchone()
+            cl_row = conn.execute("SELECT * FROM clients WHERE id=?", (client_id,)).fetchone()
+            if ib_row and cl_row:
+                link = _generate_link(dict(ib_row), dict(cl_row))
+        except:
+            pass
 
     conn.close()
     restart_xray()
-    return {"success": True, "id": inbound_id}
+    return {"success": True, "id": inbound_id, "link": link}
+
+
+@app.post("/api/inbounds")
+async def api_create_inbound(data: InboundCreate, user: str = Depends(get_current_user)):
+    result = core_create_inbound(**data.dict())
+    if not result.get("success"):
+        raise HTTPException(400, result.get("error", "Failed"))
+    return result
 
 
 class InboundUpdate(BaseModel):
@@ -1630,6 +1650,44 @@ def _get_xray_outbounds():
 
 def _set_xray_outbounds(outbounds):
     set_setting("custom_outbounds", json.dumps(outbounds))
+
+
+_bot_instance = None
+
+def _start_tg_bot():
+    global _bot_instance
+    from app.tg_bot import SelfRayBot
+    _bot_instance = SelfRayBot(
+        get_setting_fn=get_setting,
+        set_setting_fn=set_setting,
+        create_inbound_fn=core_create_inbound,
+        hash_password_fn=hash_password,
+        get_db_fn=get_db,
+    )
+    _bot_instance.start()
+
+
+@app.on_event("startup")
+async def on_startup():
+    try:
+        token = get_setting("tg_bot_token", "")
+        chat_id = get_setting("tg_chat_id", "")
+        if token and chat_id:
+            _start_tg_bot()
+    except Exception as e:
+        logger.error(f"Bot start error: {e}")
+
+
+@app.post("/api/telegram/restart-bot")
+async def api_tg_restart_bot(user: str = Depends(get_current_user)):
+    global _bot_instance
+    try:
+        if _bot_instance:
+            _bot_instance.stop()
+        _start_tg_bot()
+        return {"success": True}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 if __name__ == "__main__":

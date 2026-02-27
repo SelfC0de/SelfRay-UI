@@ -239,6 +239,7 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
     <div class="card">
         <h3>Telegram Bot</h3>
         <p style="font-size:11px;color:var(--muted);margin-bottom:10px">Get notifications about logins, client expiry, traffic limits. Create @BotFather → /newbot → copy token.</p>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:10px">Bot commands: /menu — main menu, /status — server status, /list — inbounds. Also: create inbound, change password, change port — all from Telegram.</p>
         <div class="fr">
             <div class="fg"><label>Bot Token</label><input type="text" id="tg-token" placeholder="123456789:ABCdef..."></div>
             <div class="fg"><label>Admin Chat ID</label><input type="text" id="tg-chatid" placeholder="123456789"></div>
@@ -251,6 +252,7 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
         <div class="bg" style="margin-top:8px">
             <button class="btn btn-p" onclick="saveTg()">Save Telegram Settings</button>
             <button class="btn btn-o" onclick="testTg()">Send Test Message</button>
+            <button class="btn btn-s btn-sm" onclick="restartBot()">Start/Restart Bot</button>
             <button class="btn btn-d btn-sm" onclick="resetTg()">Disconnect Bot</button>
         </div>
     </div>
@@ -814,6 +816,10 @@ async function resetTg(){
         document.getElementById('tg-chatid').value='';
         toast('Telegram bot disconnected','ok');
     }else toast('Error','err');
+}
+async function restartBot(){
+    const r=await api('/api/telegram/restart-bot',{method:'POST'});
+    if(r&&r.success)toast('Bot started','ok');else toast(r&&r.error||'Failed','err');
 }
 async function loadTg(){
     const s=await api('/api/settings');if(!s)return;
