@@ -108,6 +108,8 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
     <div class="tab active" data-tab="dash">Dashboard</div>
     <div class="tab" data-tab="inbounds">Inbounds</div>
     <div class="tab" data-tab="settings">Settings</div>
+    <div class="tab" data-tab="security">Security</div>
+    <div class="tab" data-tab="telegram">Telegram</div>
 </div>
 
 <!-- DASHBOARD -->
@@ -165,14 +167,6 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
         <span style="color:var(--muted);margin-left:8px;font-size:11px">Restart xray after changing xray-related settings</span>
     </div>
     <div class="card">
-        <h3>Change Password</h3>
-        <div class="fr">
-            <div class="fg"><label>Old Password</label><input type="password" id="pw-old"></div>
-            <div class="fg"><label>New Password</label><input type="password" id="pw-new"></div>
-        </div>
-        <button class="btn btn-p" onclick="chPass()">Change</button>
-    </div>
-    <div class="card">
         <h3>Backup</h3>
         <button class="btn btn-o" onclick="backup()">Download Database Backup</button>
     </div>
@@ -185,6 +179,80 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
             <button class="btn btn-d btn-sm" onclick="clearWhitelist()">Remove</button>
         </div>
     </div>
+    <div class="card">
+        <h3>Cloudflare WARP+ Outbound</h3>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:10px">Route traffic through Cloudflare WARP to unlock geo-blocked services (Netflix, ChatGPT, etc.) and hide your server IP from destination sites.</p>
+        <div id="warp-status" style="margin-bottom:8px"></div>
+        <div class="fr">
+            <div class="fg"><label>WARP Mode</label>
+                <select id="warp-mode">
+                    <option value="off">Disabled</option>
+                    <option value="all">All traffic via WARP</option>
+                    <option value="geo">Only geo-blocked domains</option>
+                </select>
+            </div>
+            <div class="fg"><label>WARP License Key (optional)</label><input type="text" id="warp-key" placeholder="xxxxxxxx-xxxxxxxx-xxxxxxxx"></div>
+        </div>
+        <div id="warp-geo-domains" style="display:none">
+            <div class="fg"><label>Domains via WARP (comma-separated)</label><textarea id="warp-domains" placeholder="netflix.com, openai.com, chatgpt.com, spotify.com, disney.com"></textarea></div>
+        </div>
+        <div class="bg" style="margin-top:8px">
+            <button class="btn btn-p" onclick="saveWarp()">Save WARP Settings</button>
+            <button class="btn btn-o" onclick="installWarp()">Install WARP</button>
+            <button class="btn btn-o" onclick="testWarp()">Test Connection</button>
+        </div>
+    </div>
+</div>
+<div id="tab-security" class="tc">
+    <div class="card">
+        <h3>Change Password</h3>
+        <div class="fr">
+            <div class="fg"><label>Old Password</label><input type="password" id="pw-old"></div>
+            <div class="fg"><label>New Password</label><input type="password" id="pw-new"></div>
+        </div>
+        <button class="btn btn-p" onclick="chPass()">Change</button>
+    </div>
+    <div class="card">
+        <h3>Two-Factor Authentication (2FA)</h3>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:8px">Protect panel login with TOTP (Google Authenticator, Authy, etc.)</p>
+        <div id="totp-status" style="margin-bottom:8px"></div>
+        <div class="bg">
+            <button class="btn btn-s" id="btn-totp-setup" onclick="setupTotp()">Enable 2FA</button>
+            <button class="btn btn-d btn-sm" id="btn-totp-off" onclick="disableTotp()" style="display:none">Disable 2FA</button>
+        </div>
+        <div id="totp-setup-area" style="display:none;margin-top:12px">
+            <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+                <div id="totp-qr" style="background:#fff;padding:8px;border-radius:8px;width:fit-content"></div>
+                <div>
+                    <p style="font-size:11px;color:var(--muted);margin-bottom:6px">Scan QR with authenticator app, then enter code:</p>
+                    <div class="fg"><label>Secret Key</label><input type="text" id="totp-secret" readonly style="font-family:monospace;font-size:11px"></div>
+                    <div class="fg"><label>Verify Code</label><input type="text" id="totp-code" placeholder="123456" maxlength="6"></div>
+                    <button class="btn btn-p" onclick="verifyTotp()">Verify & Enable</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- TELEGRAM -->
+<div id="tab-telegram" class="tc">
+    <div class="card">
+        <h3>Telegram Bot</h3>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:10px">Get notifications about logins, client expiry, traffic limits. Create @BotFather → /newbot → copy token.</p>
+        <div class="fr">
+            <div class="fg"><label>Bot Token</label><input type="text" id="tg-token" placeholder="123456789:ABCdef..."></div>
+            <div class="fg"><label>Admin Chat ID</label><input type="text" id="tg-chatid" placeholder="123456789"></div>
+        </div>
+        <div class="fr">
+            <label class="cb"><input type="checkbox" id="tg-login" checked> Notify on login</label>
+            <label class="cb"><input type="checkbox" id="tg-expiry" checked> Notify on client expiry</label>
+            <label class="cb"><input type="checkbox" id="tg-traffic" checked> Notify on traffic limit</label>
+        </div>
+        <div class="bg" style="margin-top:8px">
+            <button class="btn btn-p" onclick="saveTg()">Save Telegram Settings</button>
+            <button class="btn btn-o" onclick="testTg()">Send Test Message</button>
+        </div>
+    </div>
 </div>
 </div>
 
@@ -192,6 +260,28 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 <div class="mo" id="m-add-ib">
 <div class="ml">
 <h3 id="ib-modal-title">New Inbound</h3>
+<div id="presets-area">
+    <div class="section-title">Quick Presets</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+        <button class="btn btn-o" style="text-align:left;padding:10px 12px" onclick="applyPreset('speed')">
+            <div style="font-weight:600;font-size:13px">⚡ Max Speed</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:2px">VLESS + TCP + Reality<br>Best throughput, low latency</div>
+        </button>
+        <button class="btn btn-o" style="text-align:left;padding:10px 12px" onclick="applyPreset('stealth')">
+            <div style="font-weight:600;font-size:13px">🛡️ Max Stealth</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:2px">VLESS + XHTTP + Reality<br>Hardest to detect by DPI</div>
+        </button>
+        <button class="btn btn-o" style="text-align:left;padding:10px 12px" onclick="applyPreset('streaming')">
+            <div style="font-weight:600;font-size:13px">📺 Streaming</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:2px">VLESS + WebSocket + TLS<br>Netflix, YouTube, CDN-friendly</div>
+        </button>
+        <button class="btn btn-o" style="text-align:left;padding:10px 12px" onclick="applyPreset('gaming')">
+            <div style="font-weight:600;font-size:13px">🎮 Gaming</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:2px">VLESS + gRPC + Reality<br>Low jitter, stable for UDP</div>
+        </button>
+    </div>
+    <div style="text-align:center;color:var(--muted);font-size:11px;margin-bottom:10px">— or configure manually —</div>
+</div>
 <div class="section-title">Protocol</div>
 <div class="fr3">
     <div class="fg"><label>Protocol</label>
@@ -256,7 +346,7 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 <div id="grp-transport" class="cond show">
     <div class="section-title">Transport</div>
     <div class="fr">
-        <div class="fg"><label>Network</label><select id="ib-net" onchange="ibNetChange()"><option value="tcp">TCP (RAW)</option><option value="ws">WebSocket</option><option value="grpc">gRPC</option><option value="h2">HTTP/2</option><option value="httpupgrade">HTTPUpgrade</option></select></div>
+        <div class="fg"><label>Network</label><select id="ib-net" onchange="ibNetChange()"><option value="tcp">TCP (RAW)</option><option value="ws">WebSocket</option><option value="grpc">gRPC</option><option value="h2">HTTP/2</option><option value="httpupgrade">HTTPUpgrade</option><option value="xhttp">XHTTP (SplitHTTP)</option></select></div>
         <div class="fg"><label>Security</label><select id="ib-sec" onchange="ibSecChange()"><option value="none">None</option><option value="reality">Reality</option><option value="tls">TLS</option></select></div>
     </div>
     <div id="grp-tcp" class="cond show">
@@ -267,6 +357,7 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
     <div id="grp-grpc" class="cond"><div class="fr"><div class="fg"><label>Service Name</label><input type="text" id="ib-grpc-sn" value="grpc"></div><div class="fg"><label class="cb" style="margin-top:16px"><input type="checkbox" id="ib-grpc-mm"> Multi Mode</label></div></div></div>
     <div id="grp-h2" class="cond"><div class="fr"><div class="fg"><label>Path</label><input type="text" id="ib-h2-path" value="/"></div><div class="fg"><label>Host</label><input type="text" id="ib-h2-host"></div></div></div>
     <div id="grp-hu" class="cond"><div class="fr"><div class="fg"><label>Path</label><input type="text" id="ib-hu-path" value="/"></div><div class="fg"><label>Host</label><input type="text" id="ib-hu-host"></div></div></div>
+    <div id="grp-xhttp" class="cond"><div class="fr"><div class="fg"><label>Path</label><input type="text" id="ib-xhttp-path" value="/"></div><div class="fg"><label>Host</label><input type="text" id="ib-xhttp-host"></div></div><div class="fr"><div class="fg"><label>Mode</label><select id="ib-xhttp-mode"><option value="auto">auto</option><option value="packet-up">packet-up</option><option value="stream-up">stream-up</option><option value="stream-one">stream-one</option></select></div></div></div>
 
     <div id="grp-tls" class="cond">
         <div class="section-title">TLS Settings</div>
@@ -474,6 +565,7 @@ function showAddIb(){
     document.getElementById('ib-modal-title').textContent='New Inbound';
     document.getElementById('ib-submit-btn').textContent='Create Inbound';
     document.getElementById('ib-proto').disabled=false;
+    document.getElementById('presets-area').style.display='';
     document.getElementById('m-add-ib').classList.add('show');
     if(serverIP)document.getElementById('ib-listen').value=serverIP;
     ibProtoChange();
@@ -503,6 +595,8 @@ function getIbBody(){
         trojan_fallback_port:+document.getElementById('ib-tj-fb-port').value||0,sniffing_enabled:document.getElementById('ib-sniff').checked,
         sniffing_dest_override:document.getElementById('ib-sniff-do').value,sniffing_route_only:document.getElementById('ib-sniff-ro').checked,
         client_name:document.getElementById('ib-client-name').value,country:country,
+        xhttp_path:document.getElementById('ib-xhttp-path').value,xhttp_host:document.getElementById('ib-xhttp-host').value,
+        xhttp_mode:document.getElementById('ib-xhttp-mode').value,
     };
 }
 async function submitIb(){
@@ -521,6 +615,7 @@ async function editIb(id){
     const st=ib.stream_settings_parsed||{};const sets=ib.settings_parsed||{};const sn=ib.sniffing_parsed||{};
     document.getElementById('ib-modal-title').textContent='Edit Inbound #'+id;
     document.getElementById('ib-submit-btn').textContent='Save Changes';
+    document.getElementById('presets-area').style.display='none';
     document.getElementById('ib-proto').value=ib.protocol;document.getElementById('ib-proto').disabled=true;
     document.getElementById('ib-port').value=ib.port;
     document.getElementById('ib-listen').value=ib.listen||'';
@@ -540,7 +635,7 @@ async function editIb(id){
     document.getElementById('ib-tls-fp').value=ts.fingerprint||'chrome';
     document.getElementById('ib-tls-alpn').value=(ts.alpn||[]).join(',');
     document.getElementById('ib-tls-insec').checked=!!ts.allowInsecure;
-    const ws=st.wsSettings||{};const grpc=st.grpcSettings||{};const h2=st.httpSettings||{};const hu=st.httpupgradeSettings||{};const tcp=st.tcpSettings||{};
+    const ws=st.wsSettings||{};const grpc=st.grpcSettings||{};const h2=st.httpSettings||{};const hu=st.httpupgradeSettings||{};const tcp=st.tcpSettings||{};const xh=st.xhttpSettings||{};
     document.getElementById('ib-ws-path').value=ws.path||'/ws';
     document.getElementById('ib-ws-host').value=(ws.headers||{}).Host||'';
     document.getElementById('ib-grpc-sn').value=grpc.serviceName||'grpc';
@@ -549,6 +644,9 @@ async function editIb(id){
     document.getElementById('ib-h2-host').value=(h2.host||[])[0]||'';
     document.getElementById('ib-hu-path').value=hu.path||'/';
     document.getElementById('ib-hu-host').value=hu.host||'';
+    document.getElementById('ib-xhttp-path').value=xh.path||'/';
+    document.getElementById('ib-xhttp-host').value=xh.host||'';
+    document.getElementById('ib-xhttp-mode').value=xh.mode||'auto';
     document.getElementById('ib-tcp-ht').value=(tcp.header||{}).type||'none';
     document.getElementById('ib-sniff').checked=sn.enabled!==false;
     document.getElementById('ib-sniff-do').value=(sn.destOverride||['http','tls','quic']).join(',');
@@ -564,8 +662,8 @@ function ibProtoChange(){
 }
 function ibNetChange(){
     const n=document.getElementById('ib-net').value;
-    ['tcp','ws','grpc','h2','hu'].forEach(x=>condShow('grp-'+x,false));
-    if(n==='tcp')condShow('grp-tcp',true);else if(n==='ws')condShow('grp-ws',true);else if(n==='grpc')condShow('grp-grpc',true);else if(n==='h2')condShow('grp-h2',true);else if(n==='httpupgrade')condShow('grp-hu',true);
+    ['tcp','ws','grpc','h2','hu','xhttp'].forEach(x=>condShow('grp-'+x,false));
+    if(n==='tcp')condShow('grp-tcp',true);else if(n==='ws')condShow('grp-ws',true);else if(n==='grpc')condShow('grp-grpc',true);else if(n==='h2')condShow('grp-h2',true);else if(n==='httpupgrade')condShow('grp-hu',true);else if(n==='xhttp')condShow('grp-xhttp',true);
 }
 function ibSecChange(){const s=document.getElementById('ib-sec').value;condShow('grp-tls',s==='tls');condShow('grp-reality',s==='reality')}
 function ibTcpHtChange(){condShow('grp-tcp-http',document.getElementById('ib-tcp-ht').value==='http')}
@@ -690,6 +788,118 @@ async function clearWhitelist(){
 
 document.getElementById('ib-country').addEventListener('change',function(){document.getElementById('ib-country-custom-grp').style.display=this.value==='custom'?'':'none'});
 
+async function saveTg(){
+    const r=await api('/api/settings',{method:'POST',body:JSON.stringify({
+        tg_bot_token:document.getElementById('tg-token').value,
+        tg_chat_id:document.getElementById('tg-chatid').value,
+        tg_notify_login:document.getElementById('tg-login').checked,
+        tg_notify_expiry:document.getElementById('tg-expiry').checked,
+        tg_notify_traffic:document.getElementById('tg-traffic').checked,
+    })});
+    if(r&&r.success)toast('Telegram settings saved','ok');else toast('Error','err');
+}
+async function testTg(){
+    const r=await api('/api/telegram/test',{method:'POST'});
+    if(r&&r.success)toast('Test message sent','ok');else toast(r&&r.error||'Failed','err');
+}
+async function loadTg(){
+    const s=await api('/api/settings');if(!s)return;
+    document.getElementById('tg-token').value=s.tg_bot_token||'';
+    document.getElementById('tg-chatid').value=s.tg_chat_id||'';
+    document.getElementById('tg-login').checked=s.tg_notify_login!==false;
+    document.getElementById('tg-expiry').checked=s.tg_notify_expiry!==false;
+    document.getElementById('tg-traffic').checked=s.tg_notify_traffic!==false;
+}
+async function setupTotp(){
+    const r=await api('/api/totp/setup',{method:'POST'});
+    if(!r||!r.secret)return toast('Error','err');
+    document.getElementById('totp-secret').value=r.secret;
+    document.getElementById('totp-setup-area').style.display='block';
+    if(r.qr_url){
+        const el=document.getElementById('totp-qr');el.innerHTML='';
+        new QRCode(el,{text:r.qr_url,width:160,height:160,colorDark:'#000',colorLight:'#fff',correctLevel:QRCode.CorrectLevel.M});
+    }
+}
+async function verifyTotp(){
+    const code=document.getElementById('totp-code').value;
+    if(!code||code.length!==6)return toast('Enter 6-digit code','err');
+    const r=await api('/api/totp/verify',{method:'POST',body:JSON.stringify({code:code})});
+    if(r&&r.success){toast('2FA enabled','ok');document.getElementById('totp-setup-area').style.display='none';loadTotpStatus()}
+    else toast(r&&r.error||'Invalid code','err');
+}
+async function disableTotp(){
+    if(!confirm('Disable 2FA?'))return;
+    const r=await api('/api/totp/disable',{method:'POST'});
+    if(r&&r.success){toast('2FA disabled','ok');loadTotpStatus()}else toast('Error','err');
+}
+async function loadTotpStatus(){
+    const r=await api('/api/totp/status');if(!r)return;
+    const el=document.getElementById('totp-status');
+    if(r.enabled){
+        el.innerHTML='<span class="badge b-on">2FA Active</span>';
+        document.getElementById('btn-totp-setup').style.display='none';
+        document.getElementById('btn-totp-off').style.display='';
+    }else{
+        el.innerHTML='<span class="badge b-off">2FA Disabled</span>';
+        document.getElementById('btn-totp-setup').style.display='';
+        document.getElementById('btn-totp-off').style.display='none';
+    }
+}
+function applyPreset(name){
+    const p={
+        speed:{proto:'vless',net:'tcp',sec:'reality',flow:'xtls-rprx-vision',port:443,remark:'Speed'},
+        stealth:{proto:'vless',net:'xhttp',sec:'reality',flow:'',port:443,remark:'Stealth'},
+        streaming:{proto:'vless',net:'ws',sec:'tls',flow:'',port:443,remark:'Streaming'},
+        gaming:{proto:'vless',net:'grpc',sec:'reality',flow:'',port:443,remark:'Gaming'},
+    };
+    const c=p[name];if(!c)return;
+    document.getElementById('ib-proto').value=c.proto;
+    document.getElementById('ib-proto').disabled=false;
+    document.getElementById('ib-net').value=c.net;
+    document.getElementById('ib-sec').value=c.sec;
+    document.getElementById('ib-port').value=c.port;
+    document.getElementById('ib-remark').value=c.remark;
+    if(c.flow)document.getElementById('ib-flow').value=c.flow;
+    else document.getElementById('ib-flow').value='';
+    if(c.net==='grpc')document.getElementById('ib-grpc-sn').value='game';
+    if(c.net==='ws')document.getElementById('ib-ws-path').value='/stream';
+    if(c.net==='xhttp'){document.getElementById('ib-xhttp-path').value='/';document.getElementById('ib-xhttp-mode').value='auto'}
+    ibProtoChange();ibNetChange();ibSecChange();
+    toast('Preset "'+name+'" applied — review & create','info');
+}
+document.getElementById('warp-mode').addEventListener('change',function(){
+    document.getElementById('warp-geo-domains').style.display=this.value==='geo'?'':'none';
+});
+async function saveWarp(){
+    const mode=document.getElementById('warp-mode').value;
+    const key=document.getElementById('warp-key').value;
+    const domains=document.getElementById('warp-domains').value;
+    const r=await api('/api/warp/save',{method:'POST',body:JSON.stringify({mode:mode,license_key:key,domains:domains})});
+    if(r&&r.success)toast('WARP settings saved','ok');else toast(r&&r.error||'Error','err');
+}
+async function installWarp(){
+    const btn=event.target;btn.textContent='Installing...';btn.disabled=true;
+    const r=await api('/api/warp/install',{method:'POST'});
+    btn.disabled=false;btn.textContent='Install WARP';
+    if(r&&r.success)toast('WARP installed','ok');else toast(r&&r.error||'Failed','err');
+    loadWarpStatus();
+}
+async function testWarp(){
+    const r=await api('/api/warp/test',{method:'POST'});
+    if(r&&r.success)toast('WARP IP: '+r.ip,'ok');else toast(r&&r.error||'Not connected','err');
+}
+async function loadWarpStatus(){
+    const s=await api('/api/settings');if(!s)return;
+    const mode=s.warp_mode||'off';
+    document.getElementById('warp-mode').value=mode;
+    document.getElementById('warp-key').value=s.warp_license_key||'';
+    document.getElementById('warp-domains').value=s.warp_domains||'netflix.com, openai.com, chatgpt.com, spotify.com, disney.com';
+    document.getElementById('warp-geo-domains').style.display=mode==='geo'?'':'none';
+    const el=document.getElementById('warp-status');
+    if(mode==='off')el.innerHTML='<span class="badge b-off">WARP Off</span>';
+    else el.innerHTML='<span class="badge b-on">WARP '+mode+'</span>';
+}
+
 const WL={
 'Yandex':['yandex.ru','ya.ru','dzen.ru','yandex.com','yandex.net','yastatic.net','mc.yandex.ru','browser.yandex.ru','mail.yandex.ru','zen.yandex.ru','uslugi.yandex.ru','kiks.yandex.ru','favicon.yandex.ru','travel.yandex.ru','collections.yandex.ru','surveys.yandex.ru','an.yandex.ru','frontend.vh.yandex.ru','cloud.cdn.yandex.net'],
 'VK':['vk.ru','m.vk.ru','id.vk.ru','login.vk.ru','api.vk.ru','ads.vk.ru','music.vk.ru','cloud.vk.ru','push.vk.ru','business.vk.ru','vk-portal.net','login.vk.com','cloud.vk.com'],
@@ -732,7 +942,7 @@ function wlApply(){
     document.getElementById('ib-r-sni').value=s;
     toast('Applied: '+s,'info');
 }
-loadSt();loadIb();setInterval(loadSt,15000);
+loadSt();loadIb();loadTg();loadTotpStatus();loadWarpStatus();setInterval(loadSt,15000);
 </script>
 </body>
 </html>

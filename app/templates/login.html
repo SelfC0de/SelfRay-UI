@@ -28,6 +28,7 @@
     <form method="post" action="/login">
         <div class="fg"><label>Login</label><input type="text" name="username" required autofocus></div>
         <div class="fg"><label>Password</label><input type="password" name="password" required></div>
+        <div class="fg" id="totp-field" style="{% if not totp_required %}display:none{% endif %}"><label>2FA Code</label><input type="text" name="totp_code" placeholder="123456" maxlength="6" autocomplete="off"></div>
         <button type="submit" class="btn">Sign In</button>
     </form>
 </div>

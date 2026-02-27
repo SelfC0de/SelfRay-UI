@@ -237,6 +237,17 @@ def generate_xray_config():
         "routing": {"rules": routing_rules}
     }
 
+    custom_outbounds = get_setting("custom_outbounds", "")
+    if custom_outbounds:
+        try:
+            extra_ob = json.loads(custom_outbounds)
+            existing_tags = {o["tag"] for o in config["outbounds"]}
+            for ob in extra_ob:
+                if ob.get("tag") not in existing_tags:
+                    config["outbounds"].append(ob)
+        except:
+            pass
+
     if dns_config:
         config["dns"] = dns_config
 
@@ -359,6 +370,10 @@ def _check_and_disable_clients():
             if disable:
                 conn.execute("UPDATE clients SET enabled=0 WHERE id=?", (c["id"],))
                 changed = True
+                try:
+                    _tg_send(f"⚠️ <b>Client disabled</b>\nID: <code>{c['id']}</code>\nReason: {'expired' if c['expiry_time'] and c['expiry_time'] > 0 and now > c['expiry_time'] else 'traffic limit'}")
+                except:
+                    pass
         if changed:
             conn.commit()
             restart_xray()
@@ -393,11 +408,12 @@ async def root(request: Request):
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
+    totp_on = get_setting("totp_enabled", "false") == "true"
+    return templates.TemplateResponse("login.html", {"request": request, "totp_required": totp_on})
 
 
 @app.post("/login")
-async def login(request: Request, username: str = Form(...), password: str = Form(...)):
+async def login(request: Request, username: str = Form(...), password: str = Form(...), totp_code: str = Form("")):
     conn = get_db()
     user = conn.execute(
         "SELECT * FROM users WHERE username=? AND password_hash=?",
@@ -406,7 +422,20 @@ async def login(request: Request, username: str = Form(...), password: str = For
     conn.close()
     if not user:
         return templates.TemplateResponse("login.html", {"request": request, "error": "Wrong login or password"})
+    if get_setting("totp_enabled", "false") == "true":
+        try:
+            import pyotp
+            secret = get_setting("totp_secret", "")
+            if secret:
+                totp = pyotp.TOTP(secret)
+                if not totp.verify(totp_code or ""):
+                    return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid 2FA code", "totp_required": True})
+        except ImportError:
+            pass
     request.session["user"] = username
+    if get_setting("tg_notify_login", "true") == "true":
+        client_ip = request.client.host if request.client else "unknown"
+        _tg_send(f"🔐 <b>Panel Login</b>\nUser: <code>{username}</code>\nIP: <code>{client_ip}</code>\nTime: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     return RedirectResponse("/panel", status_code=302)
 
 
@@ -535,6 +564,14 @@ async def api_get_settings(user: str = Depends(get_current_user)):
         "block_bittorrent": get_setting("block_bittorrent", "true") == "true",
         "custom_dns": get_setting("custom_dns", ""),
         "custom_routing_rules": get_setting("custom_routing_rules", ""),
+        "tg_bot_token": get_setting("tg_bot_token", ""),
+        "tg_chat_id": get_setting("tg_chat_id", ""),
+        "tg_notify_login": get_setting("tg_notify_login", "true") == "true",
+        "tg_notify_expiry": get_setting("tg_notify_expiry", "true") == "true",
+        "tg_notify_traffic": get_setting("tg_notify_traffic", "true") == "true",
+        "warp_mode": get_setting("warp_mode", "off"),
+        "warp_license_key": get_setting("warp_license_key", ""),
+        "warp_domains": get_setting("warp_domains", "netflix.com, openai.com, chatgpt.com, spotify.com, disney.com"),
     }
 
 
@@ -550,6 +587,11 @@ class SettingsUpdate(BaseModel):
     block_bittorrent: Optional[bool] = None
     custom_dns: Optional[str] = None
     custom_routing_rules: Optional[str] = None
+    tg_bot_token: Optional[str] = None
+    tg_chat_id: Optional[str] = None
+    tg_notify_login: Optional[bool] = None
+    tg_notify_expiry: Optional[bool] = None
+    tg_notify_traffic: Optional[bool] = None
 
 
 @app.post("/api/settings")
@@ -568,6 +610,14 @@ async def api_update_settings(data: SettingsUpdate, user: str = Depends(get_curr
         set_setting("sub_enable", "true" if data.sub_enable else "false")
     if data.block_bittorrent is not None:
         set_setting("block_bittorrent", "true" if data.block_bittorrent else "false")
+    if data.tg_bot_token is not None:
+        set_setting("tg_bot_token", data.tg_bot_token)
+    if data.tg_chat_id is not None:
+        set_setting("tg_chat_id", data.tg_chat_id)
+    for k in ("tg_notify_login", "tg_notify_expiry", "tg_notify_traffic"):
+        v = getattr(data, k, None)
+        if v is not None:
+            set_setting(k, "true" if v else "false")
     return {"success": True, "note": "Restart xray to apply xray-related changes"}
 
 
@@ -644,6 +694,10 @@ class InboundCreate(BaseModel):
     # HTTPUPGRADE
     httpupgrade_path: str = "/"
     httpupgrade_host: str = ""
+    # XHTTP
+    xhttp_path: str = "/"
+    xhttp_host: str = ""
+    xhttp_mode: str = "auto"
     # Sniffing
     sniffing_enabled: bool = True
     sniffing_dest_override: str = "http,tls,quic"
@@ -915,6 +969,13 @@ def _build_stream_settings(data: InboundCreate) -> dict:
         if data.httpupgrade_host:
             hu["host"] = data.httpupgrade_host
         stream["httpupgradeSettings"] = hu
+
+    # ── XHTTP (SplitHTTP) ──
+    elif data.network == "xhttp":
+        xh = {"path": data.xhttp_path or "/", "mode": data.xhttp_mode or "auto"}
+        if data.xhttp_host:
+            xh["host"] = data.xhttp_host
+        stream["xhttpSettings"] = xh
 
     # ── TLS ──
     if data.security == "tls":
@@ -1337,6 +1398,217 @@ async def api_apply_whitelist(user: str = Depends(get_current_user)):
     set_setting("custom_routing_rules", rule)
     restart_xray()
     return {"success": True, "count": len(domains)}
+
+
+# ═══════════════════════════════════════════
+#  API: TELEGRAM
+# ═══════════════════════════════════════════
+
+def _tg_send(text):
+    token = get_setting("tg_bot_token", "")
+    chat_id = get_setting("tg_chat_id", "")
+    if not token or not chat_id:
+        return False
+    try:
+        import urllib.request
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        data = json.dumps({"chat_id": chat_id, "text": text, "parse_mode": "HTML"}).encode()
+        req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=10)
+        return True
+    except Exception as e:
+        logger.error(f"Telegram send error: {e}")
+        return False
+
+
+@app.post("/api/telegram/test")
+async def api_tg_test(user: str = Depends(get_current_user)):
+    ok = _tg_send("✅ <b>SelfRay-UI</b>\nTest message — bot is working!")
+    if ok:
+        return {"success": True}
+    return {"success": False, "error": "Failed. Check token and chat ID."}
+
+
+# ═══════════════════════════════════════════
+#  API: TOTP (2FA)
+# ═══════════════════════════════════════════
+
+@app.get("/api/totp/status")
+async def api_totp_status(user: str = Depends(get_current_user)):
+    return {"enabled": get_setting("totp_enabled", "false") == "true"}
+
+
+@app.post("/api/totp/setup")
+async def api_totp_setup(user: str = Depends(get_current_user)):
+    try:
+        import pyotp
+    except ImportError:
+        raise HTTPException(400, "pyotp not installed. Run: pip install pyotp")
+    secret = pyotp.random_base32()
+    set_setting("totp_secret_pending", secret)
+    totp = pyotp.TOTP(secret)
+    qr_url = totp.provisioning_uri(name="admin", issuer_name="SelfRay-UI")
+    return {"secret": secret, "qr_url": qr_url}
+
+
+class TotpVerify(BaseModel):
+    code: str
+
+
+@app.post("/api/totp/verify")
+async def api_totp_verify(data: TotpVerify, user: str = Depends(get_current_user)):
+    try:
+        import pyotp
+    except ImportError:
+        raise HTTPException(400, "pyotp not installed")
+    secret = get_setting("totp_secret_pending", "")
+    if not secret:
+        raise HTTPException(400, "No pending 2FA setup")
+    totp = pyotp.TOTP(secret)
+    if totp.verify(data.code):
+        set_setting("totp_secret", secret)
+        set_setting("totp_enabled", "true")
+        set_setting("totp_secret_pending", "")
+        return {"success": True}
+    return {"success": False, "error": "Invalid code"}
+
+
+@app.post("/api/totp/disable")
+async def api_totp_disable(user: str = Depends(get_current_user)):
+    set_setting("totp_enabled", "false")
+    set_setting("totp_secret", "")
+    return {"success": True}
+
+
+# ═══════════════════════════════════════════
+#  API: WARP
+# ═══════════════════════════════════════════
+
+WARP_CONF = Path("/etc/selfray/warp.conf")
+WARP_SOCKS_PORT = 40000
+
+
+class WarpSave(BaseModel):
+    mode: str = "off"
+    license_key: str = ""
+    domains: str = ""
+
+
+@app.post("/api/warp/save")
+async def api_warp_save(data: WarpSave, user: str = Depends(get_current_user)):
+    set_setting("warp_mode", data.mode)
+    set_setting("warp_license_key", data.license_key)
+    set_setting("warp_domains", data.domains)
+    _apply_warp_routing(data.mode, data.domains)
+    return {"success": True}
+
+
+@app.post("/api/warp/install")
+async def api_warp_install(user: str = Depends(get_current_user)):
+    try:
+        script = """
+set -e
+if command -v warp-cli >/dev/null 2>&1; then echo "already_installed"; exit 0; fi
+curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | gpg --yes --dearmor -o /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg 2>/dev/null
+echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" > /etc/apt/sources.list.d/cloudflare-client.list
+apt-get update -qq && apt-get install -y -qq cloudflare-warp >/dev/null 2>&1
+echo "installed"
+"""
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=180)
+        if r.returncode != 0:
+            return {"success": False, "error": r.stderr[-500:] if r.stderr else "Install failed"}
+        reg = subprocess.run(["bash", "-c", """
+if ! warp-cli --accept-tos registration show >/dev/null 2>&1; then
+    warp-cli --accept-tos registration new 2>/dev/null || true
+fi
+warp-cli --accept-tos mode proxy 2>/dev/null || true
+warp-cli --accept-tos proxy port 40000 2>/dev/null || true
+warp-cli --accept-tos connect 2>/dev/null || true
+echo "ok"
+"""], capture_output=True, text=True, timeout=30)
+        license_key = get_setting("warp_license_key", "")
+        if license_key:
+            subprocess.run(["warp-cli", "--accept-tos", "registration", "license", license_key],
+                           capture_output=True, text=True, timeout=15)
+        return {"success": True}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/warp/test")
+async def api_warp_test(user: str = Depends(get_current_user)):
+    try:
+        r = subprocess.run(
+            ["curl", "-s", "--max-time", "5", "--socks5", f"127.0.0.1:{WARP_SOCKS_PORT}", "https://ifconfig.me"],
+            capture_output=True, text=True, timeout=10
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            return {"success": True, "ip": r.stdout.strip()}
+        return {"success": False, "error": "WARP not connected. Run Install first."}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def _apply_warp_routing(mode, domains_str=""):
+    if mode == "off":
+        _remove_warp_outbound()
+        return
+    outbounds = _get_xray_outbounds()
+    warp_ob = {
+        "tag": "warp",
+        "protocol": "socks",
+        "settings": {
+            "servers": [{"address": "127.0.0.1", "port": WARP_SOCKS_PORT}]
+        }
+    }
+    outbounds = [o for o in outbounds if o.get("tag") != "warp"]
+    outbounds.append(warp_ob)
+    _set_xray_outbounds(outbounds)
+    if mode == "all":
+        rules = json.loads(get_setting("custom_routing_rules", "[]") or "[]")
+        rules = [r for r in rules if r.get("outboundTag") != "warp"]
+        rules.insert(0, {
+            "type": "field",
+            "outboundTag": "warp",
+            "network": "tcp,udp"
+        })
+        set_setting("custom_routing_rules", json.dumps(rules))
+    elif mode == "geo":
+        domains = [d.strip() for d in domains_str.split(",") if d.strip()]
+        if domains:
+            rules = json.loads(get_setting("custom_routing_rules", "[]") or "[]")
+            rules = [r for r in rules if r.get("outboundTag") != "warp"]
+            rules.insert(0, {
+                "type": "field",
+                "domain": [f"domain:{d}" for d in domains],
+                "outboundTag": "warp"
+            })
+            set_setting("custom_routing_rules", json.dumps(rules))
+    restart_xray()
+
+
+def _remove_warp_outbound():
+    outbounds = _get_xray_outbounds()
+    outbounds = [o for o in outbounds if o.get("tag") != "warp"]
+    _set_xray_outbounds(outbounds)
+    rules = json.loads(get_setting("custom_routing_rules", "[]") or "[]")
+    rules = [r for r in rules if r.get("outboundTag") != "warp"]
+    set_setting("custom_routing_rules", json.dumps(rules))
+    restart_xray()
+
+
+def _get_xray_outbounds():
+    try:
+        if XRAY_CONFIG_PATH.exists():
+            conf = json.loads(XRAY_CONFIG_PATH.read_text())
+            return conf.get("outbounds", [])
+    except:
+        pass
+    return [{"tag": "direct", "protocol": "freedom"}, {"tag": "blocked", "protocol": "blackhole"}]
+
+
+def _set_xray_outbounds(outbounds):
+    set_setting("custom_outbounds", json.dumps(outbounds))
 
 
 if __name__ == "__main__":
