@@ -276,6 +276,24 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
     </div>
     <div id="grp-reality" class="cond">
         <div class="section-title">Reality Settings</div>
+        <div class="card" style="padding:10px;margin-bottom:10px;background:rgba(0,200,255,.03);border-color:rgba(0,200,255,.15)">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+                <span style="font-size:11px;font-weight:600;color:var(--accent)">⚡ White List Servers</span>
+                <span style="font-size:10px;color:var(--muted)">(optional — pick dest + SNI)</span>
+            </div>
+            <div class="fr">
+                <div class="fg"><label>Category</label>
+                    <select id="wl-cat" onchange="wlCatChange()">
+                        <option value="">— Select —</option>
+                    </select>
+                </div>
+                <div class="fg"><label>Server</label>
+                    <select id="wl-srv" onchange="wlApply()">
+                        <option value="">— Select category first —</option>
+                    </select>
+                </div>
+            </div>
+        </div>
         <div class="fr">
             <div class="fg"><label>Dest (target server)</label><input type="text" id="ib-r-dest" value="google.com:443"></div>
             <div class="fg"><label>Server Names (SNI)</label><input type="text" id="ib-r-sni" value="google.com"></div>
@@ -639,6 +657,49 @@ async function backup(){
 }
 
 document.getElementById('ib-country').addEventListener('change',function(){document.getElementById('ib-country-custom-grp').style.display=this.value==='custom'?'':'none'});
+
+const WL={
+'Yandex':['yandex.ru','ya.ru','dzen.ru','yandex.com','yandex.net','yastatic.net','mc.yandex.ru','browser.yandex.ru','mail.yandex.ru','zen.yandex.ru','uslugi.yandex.ru','kiks.yandex.ru','favicon.yandex.ru','travel.yandex.ru','collections.yandex.ru','surveys.yandex.ru','an.yandex.ru','frontend.vh.yandex.ru','cloud.cdn.yandex.net'],
+'VK':['vk.ru','m.vk.ru','id.vk.ru','login.vk.ru','api.vk.ru','ads.vk.ru','music.vk.ru','cloud.vk.ru','push.vk.ru','business.vk.ru','vk-portal.net','login.vk.com','cloud.vk.com'],
+'Mail.ru':['mail.ru','www.mail.ru','e.mail.ru','cloud.mail.ru','my.mail.ru','news.mail.ru','games.mail.ru','auto.mail.ru','health.mail.ru','lady.mail.ru','sport.mail.ru','hi-tech.mail.ru','pogoda.mail.ru','tv.mail.ru','maps.mail.ru','money.mail.ru','top-fwz1.mail.ru'],
+'OK':['ok.ru','m.ok.ru','live.ok.ru','api.ok.ru','st.okcdn.ru','st-ok.cdn-vk.ru'],
+'Sberbank':['sberbank.ru','www.sberbank.ru','online.sberbank.ru','id.sber.ru','bfds.sberbank.ru'],
+'Tinkoff':['tbank.ru','cdn.tbank.ru','id.tbank.ru','hrc.tbank.ru','le.tbank.ru','cobrowsing.tbank.ru','imgproxy.cdn-tinkoff.ru'],
+'VTB':['www.vtb.ru','chat3.vtb.ru','s.vtb.ru'],
+'Alfabank':['alfabank.ru','metrics.alfabank.ru'],
+'Ozon':['ozon.ru','www.ozon.ru','xapi.ozon.ru','seller.ozon.ru','pay.ozon.ru','bank.ozon.ru','invest.ozon.ru','learning.ozon.ru','st.ozone.ru','ir.ozone.ru'],
+'Wildberries':['wb.ru','a.wb.ru','fw.wb.ru','finance.wb.ru','user-geo-data.wildberries.ru','banners-website.wildberries.ru','chat-prod.wildberries.ru'],
+'Avito':['avito.ru','www.avito.ru','m.avito.ru','api.avito.ru','st.avito.ru','avito.st','www.avito.st'],
+'Gosuslugi':['gosuslugi.ru','www.gosuslugi.ru','lk.gosuslugi.ru','esia.gosuslugi.ru','pos.gosuslugi.ru','sfd.gosuslugi.ru','bot.gosuslugi.ru','digital.gov.ru'],
+'Kinopoisk':['www.kinopoisk.ru','hd.kinopoisk.ru','st.kinopoisk.ru','api.plus.kinopoisk.ru','sso.kinopoisk.ru','graphql.kinopoisk.ru'],
+'Rutube':['rutube.ru','static.rutube.ru','ssp.rutube.ru','preview.rutube.ru','pic.rutubelist.ru','goya.rutube.ru'],
+'2GIS':['2gis.com','2gis.ru','api.2gis.ru','mapgl.2gis.com','d-assets.2gis.ru','disk.2gis.com'],
+'RZD':['rzd.ru','www.rzd.ru','mp.rzd.ru','travel.rzd.ru','ticket.rzd.ru','my.rzd.ru'],
+'LemanaProf':['lemanapro.ru','static.lemanapro.ru','cdn.lemanapro.ru','partners.lemanapro.ru'],
+'Max':['max.ru','web.max.ru','api.max.ru','st.max.ru','help.max.ru'],
+'Auto.ru':['auto.ru','sso.auto.ru'],
+'T2 Mobile':['www.t2.ru','msk.t2.ru','s3.t2.ru'],
+'Google':['google.com','www.google.com','gmail.com','youtube.com','play.google.com'],
+'Cloudflare':['cloudflare.com','www.cloudflare.com','one.one.one.one','cdn.cloudflare.net'],
+'Microsoft':['microsoft.com','www.microsoft.com','outlook.com','login.microsoftonline.com'],
+'Apple':['apple.com','www.apple.com','icloud.com']
+};
+const wlCatEl=document.getElementById('wl-cat');
+Object.keys(WL).forEach(k=>{const o=document.createElement('option');o.value=k;o.textContent=k+' ('+WL[k].length+')';wlCatEl.appendChild(o)});
+function wlCatChange(){
+    const cat=document.getElementById('wl-cat').value;
+    const sel=document.getElementById('wl-srv');
+    sel.innerHTML='<option value="">— Pick server —</option>';
+    if(!cat||!WL[cat])return;
+    WL[cat].forEach(s=>{const o=document.createElement('option');o.value=s;o.textContent=s;sel.appendChild(o)});
+}
+function wlApply(){
+    const s=document.getElementById('wl-srv').value;
+    if(!s)return;
+    document.getElementById('ib-r-dest').value=s+':443';
+    document.getElementById('ib-r-sni').value=s;
+    toast('Applied: '+s,'info');
+}
 loadSt();loadIb();setInterval(loadSt,15000);
 </script>
 </body>
