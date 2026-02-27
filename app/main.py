@@ -1443,6 +1443,13 @@ async def api_tg_test(request: Request, user: str = Depends(get_current_user)):
     return {"success": False, "error": err or "Failed"}
 
 
+@app.post("/api/telegram/reset")
+async def api_tg_reset(user: str = Depends(get_current_user)):
+    for k in ("tg_bot_token", "tg_chat_id"):
+        set_setting(k, "")
+    return {"success": True}
+
+
 # ═══════════════════════════════════════════
 #  API: TOTP (2FA)
 # ═══════════════════════════════════════════
