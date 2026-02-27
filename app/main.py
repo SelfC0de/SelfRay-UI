@@ -704,7 +704,7 @@ class InboundCreate(BaseModel):
     sniffing_route_only: bool = False
     # First client
     client_name: str = ""
-    # Metadata
+    first_client_traffic_gb: float = 0
     country: str = ""
 
 
@@ -777,9 +777,10 @@ def core_create_inbound(protocol, port, listen="", remark="", network="tcp", sec
         client_uuid = str(uuid.uuid4())
         client_id = secrets.token_hex(8)
         cname = data.client_name or "default-user"
+        traffic_limit = int(data.first_client_traffic_gb * 1024 * 1024 * 1024) if data.first_client_traffic_gb > 0 else 0
         conn.execute(
-            "INSERT INTO clients (id, inbound_id, email, uuid, flow) VALUES (?,?,?,?,?)",
-            (client_id, inbound_id, cname, client_uuid, data.flow if data.protocol == "vless" else "")
+            "INSERT INTO clients (id, inbound_id, email, uuid, flow, traffic_limit) VALUES (?,?,?,?,?,?)",
+            (client_id, inbound_id, cname, client_uuid, data.flow if data.protocol == "vless" else "", traffic_limit)
         )
         conn.commit()
         try:
@@ -1660,7 +1661,6 @@ def _start_tg_bot():
     _bot_instance = SelfRayBot(
         get_setting_fn=get_setting,
         set_setting_fn=set_setting,
-        create_inbound_fn=core_create_inbound,
         hash_password_fn=hash_password,
         get_db_fn=get_db,
     )

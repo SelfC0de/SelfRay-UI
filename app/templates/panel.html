@@ -320,7 +320,10 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
         </select>
     </div>
     <div class="fg" id="ib-country-custom-grp" style="display:none"><label>Custom Country</label><input type="text" id="ib-country-custom" placeholder="🏳️ MyCountry"></div>
-    <div class="fg"><label>First Client Name</label><input type="text" id="ib-client-name" placeholder="default-user"></div>
+    <div class="fr">
+        <div class="fg"><label>First Client Name</label><input type="text" id="ib-client-name" placeholder="default-user"></div>
+        <div class="fg"><label>Traffic Limit (GB, 0 = unlimited)</label><input type="number" id="ib-traffic" value="0" min="0" step="0.1"></div>
+    </div>
 </div>
 
 <div id="grp-vless" class="cond show">
@@ -598,6 +601,7 @@ function getIbBody(){
         trojan_fallback_port:+document.getElementById('ib-tj-fb-port').value||0,sniffing_enabled:document.getElementById('ib-sniff').checked,
         sniffing_dest_override:document.getElementById('ib-sniff-do').value,sniffing_route_only:document.getElementById('ib-sniff-ro').checked,
         client_name:document.getElementById('ib-client-name').value,country:country,
+        first_client_traffic_gb:+document.getElementById('ib-traffic').value||0,
         xhttp_path:document.getElementById('ib-xhttp-path').value,xhttp_host:document.getElementById('ib-xhttp-host').value,
         xhttp_mode:document.getElementById('ib-xhttp-mode').value,
     };
