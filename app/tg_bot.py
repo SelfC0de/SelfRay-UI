@@ -15,6 +15,24 @@ PRESETS = {
     "gaming": {"protocol": "vless", "network": "grpc", "security": "reality", "flow": "", "port": 443, "label": "🎮 Gaming (VLESS+gRPC+Reality)"},
 }
 
+DEST_OPTIONS = [
+    {"text": "google.com:443", "data": "dest_google.com:443"},
+    {"text": "microsoft.com:443", "data": "dest_microsoft.com:443"},
+    {"text": "apple.com:443", "data": "dest_apple.com:443"},
+    {"text": "yahoo.com:443", "data": "dest_yahoo.com:443"},
+    {"text": "cloudflare.com:443", "data": "dest_cloudflare.com:443"},
+    {"text": "✏️ Custom", "data": "dest_custom"},
+]
+
+FP_OPTIONS = [
+    {"text": "chrome", "data": "fp_chrome"},
+    {"text": "firefox", "data": "fp_firefox"},
+    {"text": "safari", "data": "fp_safari"},
+    {"text": "edge", "data": "fp_edge"},
+    {"text": "random", "data": "fp_random"},
+    {"text": "randomized", "data": "fp_randomized"},
+]
+
 
 class SelfRayBot:
     def __init__(self, get_setting_fn, set_setting_fn, create_inbound_fn, hash_password_fn, get_db_fn, restart_panel_fn=None):
@@ -115,6 +133,11 @@ class SelfRayBot:
         state = self._user_states.get(chat_id)
 
         if text == "/start" or text == "/menu":
+            self._user_states.pop(chat_id, None)
+            self._send_menu(chat_id)
+        elif text == "/cancel":
+            self._user_states.pop(chat_id, None)
+            self.send("❌ Cancelled.", chat_id)
             self._send_menu(chat_id)
         elif text == "/status":
             self._cmd_status(chat_id)
@@ -151,11 +174,16 @@ class SelfRayBot:
             self._cmd_create_start(chat_id)
         elif data.startswith("preset_"):
             self._cmd_create_preset(chat_id, data.replace("preset_", ""))
+        elif data.startswith("dest_"):
+            self._cb_dest(chat_id, data.replace("dest_", ""))
+        elif data.startswith("fp_"):
+            self._cb_fingerprint(chat_id, data.replace("fp_", ""))
         elif data == "chpass":
             self._cmd_chpass_start(chat_id)
         elif data == "chport":
             self._cmd_chport_start(chat_id)
         elif data == "menu":
+            self._user_states.pop(chat_id, None)
             self._send_menu(chat_id)
 
     def _handle_state(self, chat_id, text, state):
@@ -170,41 +198,52 @@ class SelfRayBot:
                 self.send("❌ Invalid port. Enter 1-65535:", chat_id)
                 return
             state["port"] = port
+            preset = state.get("preset", "speed")
+            p = PRESETS[preset]
+            if p["security"] == "reality":
+                state["action"] = "create_ib_dest"
+                kb = {"inline_keyboard": [[o] for o in DEST_OPTIONS]}
+                self.send(
+                    "🎯 <b>Reality Dest (target server)</b>\n\n"
+                    "This is the real website your server will impersonate.\n"
+                    "DPI will see traffic to this site, not to your proxy.\n\n"
+                    "Choose one or enter custom:",
+                    chat_id, reply_markup=kb
+                )
+            elif p["security"] == "tls":
+                state["action"] = "create_ib_tls_sni"
+                self.send("🌐 <b>TLS Server Name (SNI)</b>\n\nEnter your domain (e.g. <code>example.com</code>):", chat_id)
+            else:
+                state["action"] = "create_ib_remark"
+                self.send("📝 Enter remark (name):", chat_id)
+
+        elif action == "create_ib_dest_custom":
+            dest = text.strip()
+            if ":" not in dest:
+                dest += ":443"
+            state["dest"] = dest
+            sni = dest.split(":")[0]
+            state["sni"] = sni
+            self._ask_sni(chat_id, state, sni)
+
+        elif action == "create_ib_sni":
+            if text != "-":
+                state["sni"] = text.strip()
+            self._ask_fingerprint(chat_id, state)
+
+        elif action == "create_ib_tls_sni":
+            state["tls_sni"] = text.strip()
             state["action"] = "create_ib_remark"
-            self.send("📝 Enter remark (name) for this inbound:", chat_id)
+            self.send("📝 Enter remark (name):", chat_id)
 
         elif action == "create_ib_remark":
             state["remark"] = text
             state["action"] = "create_ib_client"
-            self.send("👤 Enter first client name (or send <code>-</code> for default):", chat_id)
+            self.send("👤 Enter first client name (or <code>-</code> for default):", chat_id)
 
         elif action == "create_ib_client":
             client_name = "" if text == "-" else text
-            preset = state.get("preset", "speed")
-            p = PRESETS[preset]
-            try:
-                result = self.create_inbound(
-                    protocol=p["protocol"],
-                    port=state["port"],
-                    remark=state.get("remark", ""),
-                    network=p["network"],
-                    security=p["security"],
-                    flow=p["flow"],
-                    client_name=client_name,
-                )
-                if result.get("success"):
-                    ib_id = result.get("id", "?")
-                    link = result.get("link", "")
-                    msg = f"✅ Inbound created!\n\nID: <code>{ib_id}</code>\nPreset: {p['label']}\nPort: {state['port']}\nRemark: {state.get('remark', '-')}"
-                    if link:
-                        msg += f"\n\n🔗 Link:\n<code>{link}</code>"
-                    self.send(msg, chat_id)
-                else:
-                    self.send(f"❌ Error: {result.get('error', 'Unknown')}", chat_id)
-            except Exception as e:
-                self.send(f"❌ Error: {e}", chat_id)
-            self._user_states.pop(chat_id, None)
-            self._send_menu(chat_id)
+            self._do_create_inbound(chat_id, state, client_name)
 
         elif action == "chpass_old":
             conn = self.get_db()
@@ -218,13 +257,12 @@ class SelfRayBot:
             self.send("🔐 Enter new password:", chat_id)
 
         elif action == "chpass_new":
-            new_pass = text
-            if len(new_pass) < 4:
+            if len(text) < 4:
                 self.send("❌ Too short. Minimum 4 characters:", chat_id)
                 return
             conn = self.get_db()
             conn.execute("UPDATE users SET password_hash=? WHERE username=?",
-                         (self.hash_password(new_pass), state["username"]))
+                         (self.hash_password(text), state["username"]))
             conn.commit()
             conn.close()
             self.send("✅ Password changed!", chat_id)
@@ -240,9 +278,99 @@ class SelfRayBot:
                 self.send("❌ Invalid port. Enter 1-65535:", chat_id)
                 return
             self.set_setting("panel_port", str(port))
-            self.send(f"✅ Panel port changed to <b>{port}</b>.\n\n⚠️ Restart panel to apply:\n<code>selfray restart</code>", chat_id)
+            self.send(f"✅ Panel port → <b>{port}</b>\n\n⚠️ Run <code>selfray restart</code> to apply.", chat_id)
             self._user_states.pop(chat_id, None)
             self._send_menu(chat_id)
+
+    def _cb_dest(self, chat_id, value):
+        state = self._user_states.get(chat_id)
+        if not state or not state.get("action", "").startswith("create_ib_dest"):
+            return
+        if value == "custom":
+            state["action"] = "create_ib_dest_custom"
+            self.send("✏️ Enter dest (e.g. <code>example.com:443</code>):", chat_id)
+            return
+        state["dest"] = value
+        sni = value.split(":")[0]
+        state["sni"] = sni
+        self._ask_sni(chat_id, state, sni)
+
+    def _ask_sni(self, chat_id, state, default_sni):
+        state["action"] = "create_ib_sni"
+        self.send(
+            f"🌐 <b>Server Names (SNI)</b>\n\n"
+            f"Must match the Dest domain for Reality to work.\n"
+            f"Default: <code>{default_sni}</code>\n\n"
+            f"Send <code>-</code> to use default, or enter custom SNI:",
+            chat_id
+        )
+
+    def _ask_fingerprint(self, chat_id, state):
+        state["action"] = "create_ib_fp"
+        kb = {"inline_keyboard": [
+            [FP_OPTIONS[i], FP_OPTIONS[i+1]] for i in range(0, len(FP_OPTIONS)-1, 2)
+        ]}
+        self.send(
+            "🖐 <b>uTLS Fingerprint</b>\n\n"
+            "Simulates TLS handshake of a real browser.\n"
+            "<code>chrome</code> — safest default\n"
+            "<code>random</code> — different each time",
+            chat_id, reply_markup=kb
+        )
+
+    def _cb_fingerprint(self, chat_id, value):
+        state = self._user_states.get(chat_id)
+        if not state or state.get("action") != "create_ib_fp":
+            return
+        state["fingerprint"] = value
+        state["action"] = "create_ib_remark"
+        self.send("📝 Enter remark (name):", chat_id)
+
+    def _do_create_inbound(self, chat_id, state, client_name):
+        preset = state.get("preset", "speed")
+        p = PRESETS[preset]
+        kwargs = {
+            "protocol": p["protocol"],
+            "port": state["port"],
+            "remark": state.get("remark", ""),
+            "network": p["network"],
+            "security": p["security"],
+            "flow": p["flow"],
+            "client_name": client_name,
+        }
+        if p["security"] == "reality":
+            kwargs["reality_dest"] = state.get("dest", "google.com:443")
+            kwargs["reality_server_names"] = state.get("sni", "google.com")
+            kwargs["reality_fingerprint"] = state.get("fingerprint", "chrome")
+        elif p["security"] == "tls":
+            kwargs["tls_server_name"] = state.get("tls_sni", "")
+
+        self.send("⏳ Creating inbound...", chat_id)
+        try:
+            result = self.create_inbound(**kwargs)
+            if result.get("success"):
+                ib_id = result.get("id", "?")
+                link = result.get("link", "")
+                msg = f"✅ <b>Inbound created!</b>\n\n"
+                msg += f"ID: <code>{ib_id}</code>\n"
+                msg += f"Preset: {p['label']}\n"
+                msg += f"Port: {state['port']}\n"
+                if state.get("remark"):
+                    msg += f"Remark: {state['remark']}\n"
+                if p["security"] == "reality":
+                    msg += f"Dest: <code>{state.get('dest', '-')}</code>\n"
+                    msg += f"SNI: <code>{state.get('sni', '-')}</code>\n"
+                    msg += f"Fingerprint: <code>{state.get('fingerprint', 'chrome')}</code>\n"
+                    msg += f"Keys: ✅ auto-generated\n"
+                if link:
+                    msg += f"\n🔗 <b>Connection link:</b>\n<code>{link}</code>"
+                self.send(msg, chat_id)
+            else:
+                self.send(f"❌ Error: {result.get('error', 'Unknown')}", chat_id)
+        except Exception as e:
+            self.send(f"❌ Error: {e}", chat_id)
+        self._user_states.pop(chat_id, None)
+        self._send_menu(chat_id)
 
     def _cmd_status(self, chat_id):
         import subprocess, shutil
@@ -279,7 +407,8 @@ class SelfRayBot:
         rows = conn.execute("SELECT id, protocol, port, remark, enabled FROM inbounds ORDER BY id").fetchall()
         conn.close()
         if not rows:
-            self.send("📋 No inbounds.", chat_id)
+            self.send("📋 No inbounds.", chat_id,
+                      reply_markup={"inline_keyboard": [[{"text": "◀️ Menu", "callback_data": "menu"}]]})
             return
         lines = ["📋 <b>Inbounds</b>\n"]
         for r in rows:
@@ -293,23 +422,23 @@ class SelfRayBot:
             [{"text": p["label"], "callback_data": f"preset_{k}"}]
             for k, p in PRESETS.items()
         ]}
-        self.send("➕ <b>Create Inbound</b>\n\nSelect preset:", chat_id, reply_markup=kb)
+        self.send("➕ <b>Create Inbound</b>\n\nSelect preset:\n\n<i>Send /cancel to abort</i>", chat_id, reply_markup=kb)
 
     def _cmd_create_preset(self, chat_id, preset_name):
         if preset_name not in PRESETS:
             self.send("❌ Unknown preset.", chat_id)
             return
         self._user_states[chat_id] = {"action": "create_ib_port", "preset": preset_name}
-        self.send(f"Selected: <b>{PRESETS[preset_name]['label']}</b>\n\n🔌 Enter port (e.g. 443):", chat_id)
+        self.send(f"Selected: <b>{PRESETS[preset_name]['label']}</b>\n\n🔌 Enter port (e.g. 443):\n\n<i>/cancel to abort</i>", chat_id)
 
     def _cmd_chpass_start(self, chat_id):
         self._user_states[chat_id] = {"action": "chpass_old"}
-        self.send("🔑 Enter current password:", chat_id)
+        self.send("🔑 Enter current password:\n\n<i>/cancel to abort</i>", chat_id)
 
     def _cmd_chport_start(self, chat_id):
         port = self.get_setting("panel_port", "8443")
         self._user_states[chat_id] = {"action": "chport"}
-        self.send(f"🔧 Current panel port: <b>{port}</b>\n\nEnter new port:", chat_id)
+        self.send(f"🔧 Current panel port: <b>{port}</b>\n\nEnter new port:\n\n<i>/cancel to abort</i>", chat_id)
 
     def _cmd_help(self, chat_id):
         self.send(
@@ -317,6 +446,7 @@ class SelfRayBot:
             "/menu — Main menu\n"
             "/status — Server status\n"
             "/list — List inbounds\n"
+            "/cancel — Cancel current action\n"
             "/help — This message",
             chat_id,
             reply_markup={"inline_keyboard": [[{"text": "◀️ Menu", "callback_data": "menu"}]]}
