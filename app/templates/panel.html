@@ -176,6 +176,15 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
         <h3>Backup</h3>
         <button class="btn btn-o" onclick="backup()">Download Database Backup</button>
     </div>
+    <div class="card">
+        <h3>RU Whitelist Routing</h3>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:8px">Route Russian domains (gosuslugi, sberbank, vk, yandex, avito, ozon, etc.) directly, bypassing VPN. <span id="wl-count"></span></p>
+        <div class="bg">
+            <button class="btn btn-s" onclick="applyWhitelist()">Apply RU Whitelist</button>
+            <button class="btn btn-o" onclick="viewWhitelist()">View Domains</button>
+            <button class="btn btn-d btn-sm" onclick="clearWhitelist()">Remove</button>
+        </div>
+    </div>
 </div>
 </div>
 
@@ -636,6 +645,7 @@ async function loadSets(){
     document.getElementById('s-log').value=s.xray_log_level;document.getElementById('s-sub').value=s.sub_path;
     document.getElementById('s-bt').checked=s.block_bittorrent;document.getElementById('s-suben').checked=s.sub_enable;
     document.getElementById('s-dns').value=s.custom_dns;document.getElementById('s-rr').value=s.custom_routing_rules;
+    try{const wl=await api('/api/whitelist');if(wl)document.getElementById('wl-count').textContent='('+wl.count+' domains available)'}catch(e){}
 }
 async function saveSets(){
     const r=await api('/api/settings',{method:'POST',body:JSON.stringify({
@@ -654,6 +664,28 @@ async function backup(){
     const r=await api('/api/backup');if(r.database){
         const a=document.createElement('a');a.href='data:application/octet-stream;base64,'+r.database;
         a.download='selfray-backup-'+new Date().toISOString().slice(0,10)+'.db';a.click();toast('Backup downloaded','ok')}
+}
+async function applyWhitelist(){
+    const r=await api('/api/apply-whitelist',{method:'POST'});
+    if(r&&r.success){toast(r.count+' domains routed direct','ok');loadSets()}else toast('Error','err');
+}
+async function viewWhitelist(){
+    const r=await api('/api/whitelist');if(!r||!r.domains)return;
+    const grouped={};
+    r.domains.forEach(d=>{const p=d.split('.').slice(-2).join('.');if(!grouped[p])grouped[p]=[];grouped[p].push(d)});
+    let html='<div style="max-height:400px;overflow:auto;font-size:11px;font-family:monospace">';
+    html+='<div style="color:var(--accent);margin-bottom:8px">'+r.count+' domains</div>';
+    Object.keys(grouped).sort().forEach(g=>{html+='<div style="color:var(--muted);margin-top:6px;font-weight:600">'+g+' ('+grouped[g].length+')</div>';grouped[g].forEach(d=>{html+='<div style="padding:1px 0;color:#888">'+d+'</div>'})});
+    html+='</div>';
+    document.getElementById('cfg-view').style.display='none';
+    document.getElementById('link-c').innerHTML=html;
+    document.getElementById('m-link').querySelector('h3').textContent='RU Whitelist Domains';
+    document.getElementById('m-link').classList.add('show');
+}
+async function clearWhitelist(){
+    if(!confirm('Remove whitelist routing rules?'))return;
+    const r=await api('/api/settings',{method:'POST',body:JSON.stringify({custom_routing_rules:'[]'})});
+    if(r&&r.success){toast('Whitelist removed','ok');loadSets()}else toast('Error','err');
 }
 
 document.getElementById('ib-country').addEventListener('change',function(){document.getElementById('ib-country-custom-grp').style.display=this.value==='custom'?'':'none'});

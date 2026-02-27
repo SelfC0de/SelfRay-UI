@@ -1314,6 +1314,31 @@ async def api_backup(user: str = Depends(get_current_user)):
     return {"error": "No database"}
 
 
+@app.get("/api/whitelist")
+async def api_get_whitelist(user: str = Depends(get_current_user)):
+    wl_path = APP_DIR / "static" / "whitelist-ru.txt"
+    if wl_path.exists():
+        domains = [d.strip() for d in wl_path.read_text().splitlines() if d.strip()]
+        return {"domains": domains, "count": len(domains)}
+    return {"domains": [], "count": 0}
+
+
+@app.post("/api/apply-whitelist")
+async def api_apply_whitelist(user: str = Depends(get_current_user)):
+    wl_path = APP_DIR / "static" / "whitelist-ru.txt"
+    if not wl_path.exists():
+        raise HTTPException(400, "Whitelist file not found")
+    domains = [d.strip() for d in wl_path.read_text().splitlines() if d.strip()]
+    rule = json.dumps([{
+        "type": "field",
+        "domain": [f"full:{d}" for d in domains],
+        "outboundTag": "direct"
+    }])
+    set_setting("custom_routing_rules", rule)
+    restart_xray()
+    return {"success": True, "count": len(domains)}
+
+
 if __name__ == "__main__":
     import uvicorn
     init_db()
