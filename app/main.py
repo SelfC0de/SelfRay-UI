@@ -1404,29 +1404,43 @@ async def api_apply_whitelist(user: str = Depends(get_current_user)):
 #  API: TELEGRAM
 # ═══════════════════════════════════════════
 
-def _tg_send(text):
-    token = get_setting("tg_bot_token", "")
-    chat_id = get_setting("tg_chat_id", "")
+def _tg_send(text, token_override="", chat_id_override=""):
+    token = token_override or get_setting("tg_bot_token", "")
+    chat_id = chat_id_override or get_setting("tg_chat_id", "")
     if not token or not chat_id:
-        return False
+        return False, "Bot token or chat ID is empty"
     try:
-        import urllib.request
+        import urllib.request, urllib.error
         url = f"https://api.telegram.org/bot{token}/sendMessage"
-        data = json.dumps({"chat_id": chat_id, "text": text, "parse_mode": "HTML"}).encode()
-        req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
-        urllib.request.urlopen(req, timeout=10)
-        return True
+        payload = json.dumps({"chat_id": chat_id, "text": text, "parse_mode": "HTML"}).encode()
+        req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+        resp = urllib.request.urlopen(req, timeout=10)
+        body = json.loads(resp.read().decode())
+        if body.get("ok"):
+            return True, ""
+        return False, body.get("description", "Unknown Telegram error")
+    except urllib.error.HTTPError as e:
+        try:
+            err_body = json.loads(e.read().decode())
+            return False, err_body.get("description", f"HTTP {e.code}")
+        except:
+            return False, f"HTTP {e.code}"
     except Exception as e:
         logger.error(f"Telegram send error: {e}")
-        return False
+        return False, str(e)
 
 
 @app.post("/api/telegram/test")
-async def api_tg_test(user: str = Depends(get_current_user)):
-    ok = _tg_send("✅ <b>SelfRay-UI</b>\nTest message — bot is working!")
+async def api_tg_test(request: Request, user: str = Depends(get_current_user)):
+    body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+    token = body.get("token", "") or get_setting("tg_bot_token", "")
+    chat_id = body.get("chat_id", "") or get_setting("tg_chat_id", "")
+    if not token or not chat_id:
+        return {"success": False, "error": "Bot token and chat ID are required. Fill them and Save first."}
+    ok, err = _tg_send("✅ <b>SelfRay-UI</b>\nTest message — bot is working!", token, chat_id)
     if ok:
         return {"success": True}
-    return {"success": False, "error": "Failed. Check token and chat ID."}
+    return {"success": False, "error": err or "Failed"}
 
 
 # ═══════════════════════════════════════════

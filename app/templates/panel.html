@@ -799,7 +799,10 @@ async function saveTg(){
     if(r&&r.success)toast('Telegram settings saved','ok');else toast('Error','err');
 }
 async function testTg(){
-    const r=await api('/api/telegram/test',{method:'POST'});
+    const token=document.getElementById('tg-token').value;
+    const chatid=document.getElementById('tg-chatid').value;
+    if(!token||!chatid)return toast('Fill bot token and chat ID first','err');
+    const r=await api('/api/telegram/test',{method:'POST',body:JSON.stringify({token:token,chat_id:chatid})});
     if(r&&r.success)toast('Test message sent','ok');else toast(r&&r.error||'Failed','err');
 }
 async function loadTg(){
