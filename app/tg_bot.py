@@ -16,21 +16,21 @@ PRESETS = {
 }
 
 DEST_OPTIONS = [
-    {"text": "google.com:443", "data": "dest_google.com:443"},
-    {"text": "microsoft.com:443", "data": "dest_microsoft.com:443"},
-    {"text": "apple.com:443", "data": "dest_apple.com:443"},
-    {"text": "yahoo.com:443", "data": "dest_yahoo.com:443"},
-    {"text": "cloudflare.com:443", "data": "dest_cloudflare.com:443"},
-    {"text": "✏️ Custom", "data": "dest_custom"},
+    {"text": "google.com:443", "callback_data": "dest_google.com:443"},
+    {"text": "microsoft.com:443", "callback_data": "dest_microsoft.com:443"},
+    {"text": "apple.com:443", "callback_data": "dest_apple.com:443"},
+    {"text": "yahoo.com:443", "callback_data": "dest_yahoo.com:443"},
+    {"text": "cloudflare.com:443", "callback_data": "dest_cloudflare.com:443"},
+    {"text": "✏️ Custom", "callback_data": "dest_custom"},
 ]
 
 FP_OPTIONS = [
-    {"text": "chrome", "data": "fp_chrome"},
-    {"text": "firefox", "data": "fp_firefox"},
-    {"text": "safari", "data": "fp_safari"},
-    {"text": "edge", "data": "fp_edge"},
-    {"text": "random", "data": "fp_random"},
-    {"text": "randomized", "data": "fp_randomized"},
+    {"text": "chrome", "callback_data": "fp_chrome"},
+    {"text": "firefox", "callback_data": "fp_firefox"},
+    {"text": "safari", "callback_data": "fp_safari"},
+    {"text": "edge", "callback_data": "fp_edge"},
+    {"text": "random", "callback_data": "fp_random"},
+    {"text": "randomized", "callback_data": "fp_randomized"},
 ]
 
 
