@@ -648,6 +648,10 @@ class InboundCreate(BaseModel):
     sniffing_enabled: bool = True
     sniffing_dest_override: str = "http,tls,quic"
     sniffing_route_only: bool = False
+    # First client
+    client_name: str = ""
+    # Metadata
+    country: str = ""
 
 
 @app.get("/api/inbounds")
@@ -696,10 +700,13 @@ async def api_create_inbound(data: InboundCreate, user: str = Depends(get_curren
         sniffing["routeOnly"] = True
 
     conn = get_db()
+    remark = data.remark
+    if data.country:
+        remark = f"{data.country} {remark}".strip() if remark else data.country
     try:
         conn.execute(
             "INSERT INTO inbounds (tag, protocol, listen, port, settings, stream_settings, sniffing, remark) VALUES (?,?,?,?,?,?,?,?)",
-            (tag, data.protocol, data.listen, data.port, json.dumps(settings), json.dumps(stream), json.dumps(sniffing), data.remark)
+            (tag, data.protocol, data.listen, data.port, json.dumps(settings), json.dumps(stream), json.dumps(sniffing), remark)
         )
         conn.commit()
         inbound_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -710,9 +717,10 @@ async def api_create_inbound(data: InboundCreate, user: str = Depends(get_curren
     if data.protocol != "shadowsocks":
         client_uuid = str(uuid.uuid4())
         client_id = secrets.token_hex(8)
+        cname = data.client_name or "default-user"
         conn.execute(
             "INSERT INTO clients (id, inbound_id, email, uuid, flow) VALUES (?,?,?,?,?)",
-            (client_id, inbound_id, "default-user", client_uuid, data.flow if data.protocol == "vless" else "")
+            (client_id, inbound_id, cname, client_uuid, data.flow if data.protocol == "vless" else "")
         )
         conn.commit()
 
@@ -1080,7 +1088,12 @@ async def api_client_link(client_id: str, request: Request, user: str = Depends(
 def _generate_link(protocol, client, inbound, stream, settings, host):
     port = inbound["port"]
     uid = client["uuid"]
-    remark = urllib.parse.quote(client["email"])
+    ib_remark = inbound.get("remark", "")
+    cl_name = client["email"]
+    if ib_remark:
+        remark = urllib.parse.quote(f"{ib_remark} | {cl_name}")
+    else:
+        remark = urllib.parse.quote(cl_name)
     network = stream.get("network", "tcp")
     security = stream.get("security", "none")
 

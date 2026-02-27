@@ -194,6 +194,32 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
     <div class="fg"><label>Port</label><input type="number" id="ib-port" value="443"></div>
 </div>
 <div class="fg"><label>Remark</label><input type="text" id="ib-remark" placeholder="my-proxy"></div>
+<div class="fr">
+    <div class="fg"><label>Country / Flag (shown in link)</label>
+        <select id="ib-country">
+            <option value="">None</option>
+            <option value="🇸🇪 Sweden">🇸🇪 Sweden</option>
+            <option value="🇩🇪 Germany">🇩🇪 Germany</option>
+            <option value="🇳🇱 Netherlands">🇳🇱 Netherlands</option>
+            <option value="🇫🇮 Finland">🇫🇮 Finland</option>
+            <option value="🇺🇸 USA">🇺🇸 USA</option>
+            <option value="🇬🇧 UK">🇬🇧 UK</option>
+            <option value="🇫🇷 France">🇫🇷 France</option>
+            <option value="🇨🇦 Canada">🇨🇦 Canada</option>
+            <option value="🇯🇵 Japan">🇯🇵 Japan</option>
+            <option value="🇸🇬 Singapore">🇸🇬 Singapore</option>
+            <option value="🇦🇺 Australia">🇦🇺 Australia</option>
+            <option value="🇷🇺 Russia">🇷🇺 Russia</option>
+            <option value="🇹🇷 Turkey">🇹🇷 Turkey</option>
+            <option value="🇰🇿 Kazakhstan">🇰🇿 Kazakhstan</option>
+            <option value="🇺🇦 Ukraine">🇺🇦 Ukraine</option>
+            <option value="🇵🇱 Poland">🇵🇱 Poland</option>
+            <option value="custom">Custom...</option>
+        </select>
+    </div>
+    <div class="fg" id="ib-country-custom-grp" style="display:none"><label>Custom Country</label><input type="text" id="ib-country-custom" placeholder="🏳️ MyCountry"></div>
+    <div class="fg"><label>First Client Name</label><input type="text" id="ib-client-name" placeholder="default-user"></div>
+</div>
 
 <div id="grp-vless" class="cond show">
     <div class="section-title">VLESS Settings</div>
@@ -403,6 +429,7 @@ async function loadIb(){
                 h+='<tr><td>'+c.email+'</td><td style="font-family:monospace;font-size:11px" title="'+c.uuid+'">'+c.uuid.substring(0,12)+'...</td>';
                 h+='<td>'+(c.flow||'—')+'</td><td><span class="badge '+(c.enabled?'b-on':'b-off')+'">'+(c.enabled?'ON':'OFF')+'</span></td>';
                 h+='<td class="bg"><button class="btn btn-sm btn-p" onclick="showLink(\''+c.id+'\')">Link</button>';
+                h+='<button class="btn btn-sm btn-o" onclick="renameCl(\''+c.id+'\',\''+c.email.replace(/'/g,"\\'")+'\')">Rename</button>';
                 h+='<button class="btn btn-sm btn-o" onclick="copySub(\''+c.id+'\')">Sub</button>';
                 h+='<button class="btn btn-sm btn-w" onclick="rstTraf(\''+c.id+'\')">Reset</button>';
                 h+='<button class="btn btn-sm btn-d" onclick="delCl(\''+c.id+'\')">✕</button></td></tr>';
@@ -425,6 +452,8 @@ function showAddIb(){
     ibProtoChange();
 }
 function getIbBody(){
+    const cs=document.getElementById('ib-country').value;
+    const country=cs==='custom'?document.getElementById('ib-country-custom').value:cs;
     return {
         protocol:document.getElementById('ib-proto').value,port:+document.getElementById('ib-port').value,
         listen:document.getElementById('ib-listen').value,remark:document.getElementById('ib-remark').value,
@@ -446,6 +475,7 @@ function getIbBody(){
         ss_network:document.getElementById('ib-ss-net').value,trojan_fallback_addr:document.getElementById('ib-tj-fb-addr').value,
         trojan_fallback_port:+document.getElementById('ib-tj-fb-port').value||0,sniffing_enabled:document.getElementById('ib-sniff').checked,
         sniffing_dest_override:document.getElementById('ib-sniff-do').value,sniffing_route_only:document.getElementById('ib-sniff-ro').checked,
+        client_name:document.getElementById('ib-client-name').value,country:country,
     };
 }
 async function submitIb(){
@@ -574,6 +604,12 @@ async function showLink(cid){
     document.getElementById('m-link').classList.add('show');
 }
 function copySub(cid){cpText(location.origin+'/sub/'+cid);toast('Sub link copied','ok')}
+async function renameCl(cid,current){
+    const name=prompt('New client name:',current);
+    if(!name||name===current)return;
+    const r=await api('/api/clients/'+cid,{method:'PUT',body:JSON.stringify({email:name})});
+    if(r&&r.success){toast('Renamed','ok');loadIb()}else toast('Error','err');
+}
 
 async function loadSets(){
     const s=await api('/api/settings');if(!s)return;
@@ -602,6 +638,7 @@ async function backup(){
         a.download='selfray-backup-'+new Date().toISOString().slice(0,10)+'.db';a.click();toast('Backup downloaded','ok')}
 }
 
+document.getElementById('ib-country').addEventListener('change',function(){document.getElementById('ib-country-custom-grp').style.display=this.value==='custom'?'':'none'});
 loadSt();loadIb();setInterval(loadSt,15000);
 </script>
 </body>
