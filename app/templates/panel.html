@@ -974,7 +974,7 @@ function wlApply(){
     document.getElementById('ib-r-sni').value=s;
     toast('Applied: '+s,'info');
 }
-loadSt();loadIb();loadTg();loadTotpStatus();loadWarpStatus();setInterval(loadSt,15000);
+loadSt();loadIb();loadTg();loadTotpStatus();loadWarpStatus();setInterval(loadSt,15000);setInterval(loadIb,30000);
 </script>
 </body>
 </html>
