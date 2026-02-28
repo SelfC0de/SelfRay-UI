@@ -532,6 +532,7 @@ async function xAct(a){const r=await api('/api/xray/'+a,{method:'POST'});toast(r
 async function installX(){const b=document.getElementById('btn-inst');b.textContent='Installing...';b.disabled=true;const r=await api('/api/xray/install',{method:'POST'});toast(r.success?'Installed: '+r.version:'Failed: '+(r.error||''),r.success?'ok':'err');b.disabled=false;loadSt()}
 async function showConfig(){const c=await api('/api/xray/config');document.getElementById('cfg-view').value=JSON.stringify(c,null,2);document.getElementById('m-config').classList.add('show')}
 
+function fmtB(b){if(!b||b===0)return '0 B';const u=['B','KB','MB','GB','TB'];let i=0;let v=b;while(v>=1024&&i<u.length-1){v/=1024;i++}return v.toFixed(i>0?1:0)+' '+u[i]}
 async function loadIb(){
     const data=await api('/api/inbounds');if(!data)return;
     document.getElementById('xr-ib').textContent=data.length;
@@ -548,10 +549,18 @@ async function loadIb(){
         h+='<button class="btn btn-sm btn-s" onclick="showAddCl('+ib.id+',\''+ib.protocol+'\')">+ Client</button>';
         h+='<button class="btn btn-sm btn-d" onclick="delIb('+ib.id+')">Delete</button></div></div>';
         if(ib.clients&&ib.clients.length){
-            h+='<table class="tbl"><tr><th>Email</th><th>UUID/Pass</th><th>Flow</th><th>Status</th><th>Actions</th></tr>';
+            h+='<table class="tbl"><tr><th>Email</th><th>UUID/Pass</th><th>Flow</th><th>Traffic</th><th>Status</th><th>Actions</th></tr>';
             for(const c of ib.clients){
+                const used=(c.upload||0)+(c.download||0),lim=c.traffic_limit||0;
+                let tf='';
+                if(lim>0){
+                    const pct=Math.min(100,used/lim*100),clr=pct>90?'#e74c3c':pct>70?'#f39c12':'var(--accent)';
+                    tf='<div style="font-size:11px;white-space:nowrap">'+fmtB(used)+' <span style="color:var(--muted)">из</span> '+fmtB(lim)+'</div>';
+                    tf+='<div style="background:rgba(255,255,255,.1);border-radius:3px;height:6px;min-width:80px;margin-top:3px">';
+                    tf+='<div style="background:'+clr+';height:100%;border-radius:3px;width:'+pct.toFixed(1)+'%"></div></div>';
+                }else tf='<span style="font-size:11px;color:var(--muted)">'+fmtB(used)+' / ∞</span>';
                 h+='<tr><td>'+c.email+'</td><td style="font-family:monospace;font-size:11px" title="'+c.uuid+'">'+c.uuid.substring(0,12)+'...</td>';
-                h+='<td>'+(c.flow||'—')+'</td><td><span class="badge '+(c.enabled?'b-on':'b-off')+'">'+(c.enabled?'ON':'OFF')+'</span></td>';
+                h+='<td>'+(c.flow||'—')+'</td><td>'+tf+'</td><td><span class="badge '+(c.enabled?'b-on':'b-off')+'">'+(c.enabled?'ON':'OFF')+'</span></td>';
                 h+='<td class="bg"><button class="btn btn-sm btn-p" onclick="showLink(\''+c.id+'\')">Link</button>';
                 h+='<button class="btn btn-sm btn-o" onclick="renameCl(\''+c.id+'\',\''+c.email.replace(/'/g,"\\'")+'\')">Rename</button>';
                 h+='<button class="btn btn-sm btn-o" onclick="copySub(\''+c.id+'\')">Sub</button>';
