@@ -345,7 +345,9 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
     <div class="fg" id="ib-country-custom-grp" style="display:none"><label>Custom Country</label><input type="text" id="ib-country-custom" placeholder="🏳️ MyCountry"></div>
     <div class="fr">
         <div class="fg"><label>First Client Name</label><input type="text" id="ib-client-name" placeholder="default-user"></div>
-        <div class="fg"><label>Traffic Limit (GB, 0 = unlimited)</label><input type="number" id="ib-traffic" value="0" min="0" step="0.1"></div>
+        <div class="fg"><label>Traffic Limit (0 = unlimited)</label>
+            <div style="display:flex;gap:4px"><input type="number" id="ib-traffic" value="0" min="0" step="0.1" style="flex:1"><select id="ib-traffic-unit" style="width:70px"><option value="MB">MB</option><option value="GB" selected>GB</option><option value="TB">TB</option></select></div>
+        </div>
     </div>
 </div>
 
@@ -462,7 +464,9 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 <div id="cl-flow-grp" class="fg"><label>Flow</label><select id="cl-flow"><option value="">None</option><option value="xtls-rprx-vision">xtls-rprx-vision</option></select></div>
 <div class="fr">
     <div class="fg"><label>Expiry (days, 0=unlimited)</label><input type="number" id="cl-exp" value="30"></div>
-    <div class="fg"><label>Traffic Limit (GB, 0=unlimited)</label><input type="number" id="cl-traf" value="0" step="0.1"></div>
+    <div class="fg"><label>Traffic Limit (0=unlimited)</label>
+        <div style="display:flex;gap:4px"><input type="number" id="cl-traf" value="0" step="0.1" style="flex:1"><select id="cl-traf-unit" style="width:70px"><option value="MB">MB</option><option value="GB" selected>GB</option><option value="TB">TB</option></select></div>
+    </div>
 </div>
 <div class="fg"><label>IP Limit (0=unlimited)</label><input type="number" id="cl-ip" value="0"></div>
 <div class="ma">
@@ -556,6 +560,7 @@ async function installX(){const b=document.getElementById('btn-inst');b.textCont
 async function showConfig(){const c=await api('/api/xray/config');document.getElementById('cfg-view').value=JSON.stringify(c,null,2);document.getElementById('m-config').classList.add('show')}
 
 function fmtB(b){if(!b||b===0)return '0 B';const u=['B','KB','MB','GB','TB'];let i=0;let v=b;while(v>=1024&&i<u.length-1){v/=1024;i++}return v.toFixed(i>0?1:0)+' '+u[i]}
+function toGB(val,unit){if(!val)return 0;if(unit==='MB')return val/1024;if(unit==='TB')return val*1024;return val}
 async function loadIb(){
     const data=await api('/api/inbounds');if(!data)return;
     document.getElementById('xr-ib').textContent=data.length;
@@ -578,10 +583,12 @@ async function loadIb(){
                 let tf='';
                 if(lim>0){
                     const pct=Math.min(100,used/lim*100),clr=pct>90?'#e74c3c':pct>70?'#f39c12':'var(--accent)';
+                    const left=Math.max(0,lim-used);
                     tf='<div style="font-size:11px;white-space:nowrap">'+fmtB(used)+' <span style="color:var(--muted)">из</span> '+fmtB(lim)+'</div>';
                     tf+='<div style="background:rgba(255,255,255,.1);border-radius:3px;height:6px;min-width:80px;margin-top:3px">';
-                    tf+='<div style="background:'+clr+';height:100%;border-radius:3px;width:'+pct.toFixed(1)+'%"></div></div>';
-                }else tf='<span style="font-size:11px;color:var(--muted)">'+fmtB(used)+' / ∞</span>';
+                    tf+='<div style="background:'+clr+';height:100%;border-radius:3px;width:'+pct.toFixed(1)+'%;transition:width .3s"></div></div>';
+                    tf+='<div style="font-size:10px;color:var(--muted);margin-top:2px">Осталось: '+fmtB(left)+' ('+pct.toFixed(0)+'%)</div>';
+                }else tf='<span style="font-size:11px;color:var(--muted)">↑'+fmtB(c.upload||0)+' ↓'+fmtB(c.download||0)+' / ∞</span>';
                 h+='<tr><td>'+c.email+'</td><td style="font-family:monospace;font-size:11px" title="'+c.uuid+'">'+c.uuid.substring(0,12)+'...</td>';
                 h+='<td>'+(c.flow||'—')+'</td><td>'+tf+'</td><td><span class="badge '+(c.enabled?'b-on':'b-off')+'">'+(c.enabled?'ON':'OFF')+'</span></td>';
                 h+='<td class="bg"><button class="btn btn-sm btn-p" onclick="showLink(\''+c.id+'\')">Link</button>';
@@ -633,7 +640,7 @@ function getIbBody(){
         trojan_fallback_port:+document.getElementById('ib-tj-fb-port').value||0,sniffing_enabled:document.getElementById('ib-sniff').checked,
         sniffing_dest_override:document.getElementById('ib-sniff-do').value,sniffing_route_only:document.getElementById('ib-sniff-ro').checked,
         client_name:document.getElementById('ib-client-name').value,country:country,
-        first_client_traffic_gb:+document.getElementById('ib-traffic').value||0,
+        first_client_traffic_gb:toGB(+document.getElementById('ib-traffic').value||0,document.getElementById('ib-traffic-unit').value),
         xhttp_path:document.getElementById('ib-xhttp-path').value,xhttp_host:document.getElementById('ib-xhttp-host').value,
         xhttp_mode:document.getElementById('ib-xhttp-mode').value,
     };
@@ -728,7 +735,7 @@ function showAddCl(id,proto){
 async function addCl(){
     const r=await api('/api/inbounds/'+document.getElementById('cl-ib').value+'/clients',{method:'POST',body:JSON.stringify({
         email:document.getElementById('cl-email').value,flow:document.getElementById('cl-flow').value,
-        expiry_days:+document.getElementById('cl-exp').value||0,traffic_limit_gb:+document.getElementById('cl-traf').value||0,
+        expiry_days:+document.getElementById('cl-exp').value||0,traffic_limit_gb:toGB(+document.getElementById('cl-traf').value||0,document.getElementById('cl-traf-unit').value),
         ip_limit:+document.getElementById('cl-ip').value||0,
     })});
     if(r.success){toast('Client added','ok');closeM('m-add-cl');loadIb()}else toast(r.detail||'Error','err');
