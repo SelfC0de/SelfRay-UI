@@ -856,7 +856,7 @@ async function issueCert(){
     const domain=document.getElementById('cert-domain').value.trim();
     const email=document.getElementById('cert-email').value.trim();
     if(!domain||!email){toast('Domain and Email required','err');return}
-    if(!confirm('Issue Let\\'s Encrypt cert for '+domain+'? Port 80 must be free.')){return}
+    if(!confirm('Issue Lets Encrypt cert for '+domain+'? Port 80 must be free.')){return}
     toast('Issuing certificate (may take 30-60s)...','info');
     const r=await api('/api/cert/acme',{method:'POST',body:JSON.stringify({domain,email})});
     if(r&&r.success){toast(r.message,'ok');loadCertStatus()}else toast(r&&r.error||'Error','err');
