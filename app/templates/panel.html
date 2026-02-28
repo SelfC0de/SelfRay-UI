@@ -167,6 +167,29 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
         <span style="color:var(--muted);margin-left:8px;font-size:11px">Restart xray after changing xray-related settings</span>
     </div>
     <div class="card">
+        <h3>SSL Certificate</h3>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:10px">Self-signed (10 years) for panel HTTPS, or Let's Encrypt for a real domain.</p>
+        <div id="cert-status" style="margin-bottom:10px"></div>
+        <div id="cert-paths" style="display:none;margin-bottom:8px">
+            <div class="fr">
+                <div class="fg"><label>Certificate Path</label><input type="text" id="cert-path" readonly></div>
+                <div class="fg"><label>Key Path</label><input type="text" id="key-path" readonly></div>
+            </div>
+        </div>
+        <div style="border-top:1px solid rgba(255,255,255,.06);padding-top:10px;margin-bottom:10px">
+            <div class="fr">
+                <div class="fg"><label>Domain (for Let's Encrypt)</label><input type="text" id="cert-domain" placeholder="vpn.example.com"></div>
+                <div class="fg"><label>Email (for Let's Encrypt)</label><input type="email" id="cert-email" placeholder="admin@example.com"></div>
+            </div>
+        </div>
+        <div class="bg" style="margin-top:8px;flex-wrap:wrap;gap:6px">
+            <button class="btn btn-p" onclick="selfSignedCert()">Generate Self-Signed (10y)</button>
+            <button class="btn btn-o" onclick="issueCert()">Issue Let's Encrypt</button>
+            <button class="btn btn-s btn-sm" onclick="loadCertStatus()">Refresh</button>
+            <button class="btn btn-d btn-sm" onclick="revokeCert()">Remove Certificate</button>
+        </div>
+    </div>
+    <div class="card">
         <h3>Backup</h3>
         <button class="btn btn-o" onclick="backup()">Download Database Backup</button>
     </div>
@@ -804,6 +827,46 @@ async function clearWhitelist(){
 
 document.getElementById('ib-country').addEventListener('change',function(){document.getElementById('ib-country-custom-grp').style.display=this.value==='custom'?'':'none'});
 
+async function loadCertStatus(){
+    const r=await api('/api/cert/status');if(!r)return;
+    const el=document.getElementById('cert-status');
+    if(!r.installed){
+        el.innerHTML='<span class="badge b-off">No Certificate</span> <span style="font-size:11px;color:var(--muted)">Panel running on HTTP</span>';
+        document.getElementById('cert-paths').style.display='none';
+        return;
+    }
+    let badge=r.type==='self-signed'?'<span class="badge b-on">Self-Signed</span>':'<span class="badge b-pr">CA-Signed</span>';
+    let info=badge;
+    if(r.not_after)info+=' <span style="font-size:11px;color:var(--muted)">Expires: '+r.not_after+'</span>';
+    if(r.subject)info+='<br><span style="font-size:11px;color:var(--muted)">Subject: '+r.subject+'</span>';
+    el.innerHTML=info;
+    if(r.cert_path){
+        document.getElementById('cert-path').value=r.cert_path;
+        document.getElementById('key-path').value=r.key_path;
+        document.getElementById('cert-paths').style.display='';
+    }
+}
+async function selfSignedCert(){
+    if(!confirm('Generate new self-signed certificate (10 years)?'))return;
+    toast('Generating...','info');
+    const r=await api('/api/cert/self-signed',{method:'POST'});
+    if(r&&r.success){toast(r.message,'ok');loadCertStatus()}else toast(r&&r.error||'Error','err');
+}
+async function issueCert(){
+    const domain=document.getElementById('cert-domain').value.trim();
+    const email=document.getElementById('cert-email').value.trim();
+    if(!domain||!email){toast('Domain and Email required','err');return}
+    if(!confirm('Issue Let\\'s Encrypt cert for '+domain+'? Port 80 must be free.')){return}
+    toast('Issuing certificate (may take 30-60s)...','info');
+    const r=await api('/api/cert/acme',{method:'POST',body:JSON.stringify({domain,email})});
+    if(r&&r.success){toast(r.message,'ok');loadCertStatus()}else toast(r&&r.error||'Error','err');
+}
+async function revokeCert(){
+    if(!confirm('Remove SSL certificate? Panel will switch to HTTP after restart.'))return;
+    const r=await api('/api/cert/revoke',{method:'POST'});
+    if(r&&r.success){toast(r.message,'ok');loadCertStatus()}else toast('Error','err');
+}
+
 async function saveTg(){
     const r=await api('/api/settings',{method:'POST',body:JSON.stringify({
         tg_bot_token:document.getElementById('tg-token').value,
@@ -974,7 +1037,7 @@ function wlApply(){
     document.getElementById('ib-r-sni').value=s;
     toast('Applied: '+s,'info');
 }
-loadSt();loadIb();loadTg();loadTotpStatus();loadWarpStatus();setInterval(loadSt,15000);setInterval(loadIb,30000);
+loadSt();loadIb();loadTg();loadTotpStatus();loadWarpStatus();loadCertStatus();setInterval(loadSt,15000);setInterval(loadIb,30000);
 </script>
 </body>
 </html>

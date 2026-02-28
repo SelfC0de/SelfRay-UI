@@ -136,6 +136,13 @@ def setup_admin():
         logger.info("  SAVE THIS! It won't be shown again.")
         logger.info("=" * 50)
     conn.close()
+    cert_file = DATA_DIR / "cert" / "fullchain.pem"
+    key_file = DATA_DIR / "cert" / "privkey.pem"
+    if cert_file.exists() and key_file.exists() and not get_setting("ssl_cert_path", ""):
+        set_setting("ssl_cert_path", str(cert_file))
+        set_setting("ssl_key_path", str(key_file))
+        set_setting("ssl_enabled", "true")
+        logger.info("SSL auto-configured from existing certificate")
 
 
 # ═══════════════════════════════════════════
@@ -637,6 +644,144 @@ async def api_change_password(data: PasswordChange, user: str = Depends(get_curr
     conn.commit()
     conn.close()
     return {"success": True}
+
+
+
+# ═══════════════════════════════════════════
+#  API: SSL CERTIFICATE
+# ═══════════════════════════════════════════
+
+CERT_DIR = DATA_DIR / "cert"
+
+def _get_cert_info():
+    cert_file = CERT_DIR / "fullchain.pem"
+    key_file = CERT_DIR / "privkey.pem"
+    if not cert_file.exists() or not key_file.exists():
+        return {"installed": False}
+    try:
+        r = subprocess.run(
+            ["openssl", "x509", "-in", str(cert_file), "-noout", "-subject", "-issuer", "-dates", "-fingerprint"],
+            capture_output=True, text=True, timeout=10
+        )
+        if r.returncode != 0:
+            return {"installed": True, "error": r.stderr}
+        info = {"installed": True, "cert_path": str(cert_file), "key_path": str(key_file)}
+        for line in r.stdout.strip().split("\n"):
+            if line.startswith("subject="):
+                info["subject"] = line.split("=", 1)[1].strip()
+            elif line.startswith("issuer="):
+                info["issuer"] = line.split("=", 1)[1].strip()
+            elif line.startswith("notBefore="):
+                info["not_before"] = line.split("=", 1)[1].strip()
+            elif line.startswith("notAfter="):
+                info["not_after"] = line.split("=", 1)[1].strip()
+            elif "Fingerprint" in line:
+                info["fingerprint"] = line.split("=", 1)[1].strip()
+        is_self = info.get("subject", "") == info.get("issuer", "")
+        info["type"] = "self-signed" if is_self else "CA-signed"
+        return info
+    except Exception as e:
+        return {"installed": True, "error": str(e)}
+
+
+@app.get("/api/cert/status")
+async def api_cert_status(user: str = Depends(get_current_user)):
+    return _get_cert_info()
+
+
+@app.post("/api/cert/self-signed")
+async def api_cert_self_signed(user: str = Depends(get_current_user)):
+    CERT_DIR.mkdir(parents=True, exist_ok=True)
+    cert_file = CERT_DIR / "fullchain.pem"
+    key_file = CERT_DIR / "privkey.pem"
+    try:
+        ip = ""
+        try:
+            r = subprocess.run(["curl", "-s4", "--max-time", "5", "ifconfig.me"],
+                               capture_output=True, text=True, timeout=10)
+            if r.returncode == 0:
+                ip = r.stdout.strip()
+        except:
+            pass
+        san = f"IP:{ip}" if ip else "DNS:localhost"
+        cmd = [
+            "openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1",
+            "-keyout", str(key_file), "-out", str(cert_file),
+            "-days", "3650", "-nodes",
+            "-subj", f"/CN=SelfRay-UI",
+            "-addext", f"subjectAltName={san},DNS:localhost,IP:127.0.0.1"
+        ]
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        if r.returncode != 0:
+            return {"success": False, "error": r.stderr}
+        set_setting("ssl_cert_path", str(cert_file))
+        set_setting("ssl_key_path", str(key_file))
+        set_setting("ssl_enabled", "true")
+        return {"success": True, "message": "Self-signed certificate generated (10 years). Restart panel to apply HTTPS."}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/cert/acme")
+async def api_cert_acme(request: Request, user: str = Depends(get_current_user)):
+    body = await request.json()
+    domain = body.get("domain", "").strip()
+    email = body.get("email", "").strip()
+    if not domain:
+        return {"success": False, "error": "Domain is required"}
+    if not email:
+        return {"success": False, "error": "Email is required"}
+    r = subprocess.run(["which", "certbot"], capture_output=True, text=True)
+    if r.returncode != 0:
+        try:
+            subprocess.run(["apt-get", "install", "-y", "-qq", "certbot"], capture_output=True, text=True, timeout=120)
+        except:
+            return {"success": False, "error": "Failed to install certbot"}
+    CERT_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        panel_port = int(get_setting("panel_port", "8443"))
+        cmd = [
+            "certbot", "certonly", "--standalone",
+            "--preferred-challenges", "http",
+            "--http-01-port", "80",
+            "-d", domain, "--email", email,
+            "--agree-tos", "--non-interactive",
+            "--cert-path", str(CERT_DIR / "fullchain.pem"),
+            "--key-path", str(CERT_DIR / "privkey.pem"),
+        ]
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        if r.returncode != 0:
+            return {"success": False, "error": r.stderr[-500:] if r.stderr else "certbot failed"}
+        le_cert = Path(f"/etc/letsencrypt/live/{domain}/fullchain.pem")
+        le_key = Path(f"/etc/letsencrypt/live/{domain}/privkey.pem")
+        if le_cert.exists() and le_key.exists():
+            import shutil as _sh
+            _sh.copy2(str(le_cert), str(CERT_DIR / "fullchain.pem"))
+            _sh.copy2(str(le_key), str(CERT_DIR / "privkey.pem"))
+        set_setting("ssl_cert_path", str(CERT_DIR / "fullchain.pem"))
+        set_setting("ssl_key_path", str(CERT_DIR / "privkey.pem"))
+        set_setting("ssl_enabled", "true")
+        set_setting("ssl_domain", domain)
+        return {"success": True, "message": f"Let's Encrypt certificate issued for {domain}. Restart panel to apply."}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/cert/revoke")
+async def api_cert_revoke(user: str = Depends(get_current_user)):
+    cert_file = CERT_DIR / "fullchain.pem"
+    key_file = CERT_DIR / "privkey.pem"
+    try:
+        if cert_file.exists():
+            cert_file.unlink()
+        if key_file.exists():
+            key_file.unlink()
+        set_setting("ssl_cert_path", "")
+        set_setting("ssl_key_path", "")
+        set_setting("ssl_enabled", "false")
+        return {"success": True, "message": "Certificate removed. Restart panel to switch to HTTP."}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 # ═══════════════════════════════════════════
@@ -1698,4 +1843,12 @@ if __name__ == "__main__":
     host = get_setting("panel_host", "0.0.0.0")
     if len(sys.argv) > 1: port = int(sys.argv[1])
     if len(sys.argv) > 2: host = sys.argv[2]
-    uvicorn.run(app, host=host, port=port)
+    kw = {}
+    ssl_on = get_setting("ssl_enabled", "false") == "true"
+    cert = get_setting("ssl_cert_path", "")
+    key = get_setting("ssl_key_path", "")
+    if ssl_on and cert and key and Path(cert).exists() and Path(key).exists():
+        kw["ssl_certfile"] = cert
+        kw["ssl_keyfile"] = key
+        logger.info(f"HTTPS enabled: {cert}")
+    uvicorn.run(app, host=host, port=port, **kw)

@@ -91,6 +91,22 @@ XRAY_VER=$("$INSTALL_DIR/xray/xray" version 2>/dev/null | head -1 | awk '{print 
 ok "Xray-core: ${C}${XRAY_VER}${N} : Installed"
 
 # ── Step 5 ──
+step "Generating SSL certificate"
+CERT_DIR="$INSTALL_DIR/data/cert"
+mkdir -p "$CERT_DIR"
+if [ ! -f "$CERT_DIR/fullchain.pem" ]; then
+    SERVER_IP=$(curl -s4 --max-time 5 ifconfig.me 2>/dev/null || curl -s4 --max-time 5 api.ipify.org 2>/dev/null || echo "127.0.0.1")
+    openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
+        -keyout "$CERT_DIR/privkey.pem" -out "$CERT_DIR/fullchain.pem" \
+        -days 3650 -nodes \
+        -subj "/CN=SelfRay-UI" \
+        -addext "subjectAltName=IP:${SERVER_IP},DNS:localhost,IP:127.0.0.1" 2>/dev/null
+    ok "Self-signed certificate generated (10 years)"
+else
+    ok "Existing certificate preserved"
+fi
+
+# ── Step 6 ──
 step "Creating systemd service"
 cat > /etc/systemd/system/${SERVICE_NAME}.service << EOF
 [Unit]
@@ -100,7 +116,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=${INSTALL_DIR}
-ExecStart=${INSTALL_DIR}/venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port ${PANEL_PORT}
+ExecStart=${INSTALL_DIR}/venv/bin/python -m app.main
 Restart=always
 RestartSec=3
 Environment=PYTHONUNBUFFERED=1
@@ -202,7 +218,7 @@ for i in 1 2 3; do
     [ -n "$ADMIN_PASS" ] && break; sleep 2
 done
 
-PANEL_URL="http://${SERVER_IP}:${PANEL_PORT}"
+PANEL_URL="https://${SERVER_IP}:${PANEL_PORT}"
 
 echo ""
 echo -e "${G}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${N}"
