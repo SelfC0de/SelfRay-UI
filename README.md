@@ -175,46 +175,6 @@ Removes: panel, xray-core, database, systemd service, `selfray` command.
 
 ---
 
-## Typical Setup: VLESS + Reality
-
-1. Install panel on your VPS
-2. Open panel → **Inbounds** → **+ New Inbound**
-3. Settings:
-   - Protocol: **VLESS**
-   - Port: **443**
-   - Flow: **xtls-rprx-vision**
-   - Network: **TCP (RAW)**
-   - Security: **Reality**
-   - Dest: **google.com:443**
-   - Server Names: **google.com**
-   - Click **🔑 Generate Keys**
-4. Click **Create Inbound**
-5. Click **Link** on the client → copy → paste into v2rayN / Hiddify / NekoBox
-
----
-
-## Project Structure
-
-```
-SelfRay-UI/
-├── app/
-│   ├── main.py            # Backend (FastAPI)
-│   ├── static/
-│   │   └── logo.png       # Logo
-│   └── templates/
-│       ├── login.html     # Login page
-│       └── panel.html     # Main panel
-├── data/                  # SQLite DB + xray config (runtime)
-├── xray/                  # Xray-core binary (downloaded at install)
-├── install.sh             # One-command installer
-├── requirements.txt
-├── Dockerfile
-├── docker-compose.yml
-└── LICENSE
-```
-
----
-
 ## Contacts
 
 - Telegram: [@selfcode_dev](https://t.me/selfcode_dev)
