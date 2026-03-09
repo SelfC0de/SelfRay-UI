@@ -578,7 +578,7 @@ async def api_get_settings(user: str = Depends(get_current_user)):
         "tg_notify_traffic": get_setting("tg_notify_traffic", "true") == "true",
         "warp_mode": get_setting("warp_mode", "off"),
         "warp_license_key": get_setting("warp_license_key", ""),
-        "warp_domains": get_setting("warp_domains", "netflix.com, openai.com, chatgpt.com, spotify.com, disney.com"),
+        "warp_domains": get_setting("warp_domains", "geosite:openai, geosite:netflix, geosite:google, geosite:spotify, chatgpt.com, disney.com"),
     }
 
 
@@ -1697,7 +1697,8 @@ async def api_warp_install(user: str = Depends(get_current_user)):
 set -e
 if command -v warp-cli >/dev/null 2>&1; then echo "already_installed"; exit 0; fi
 curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | gpg --yes --dearmor -o /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg 2>/dev/null
-echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" > /etc/apt/sources.list.d/cloudflare-client.list
+CODENAME=$(lsb_release -cs 2>/dev/null || echo "focal")
+echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $CODENAME main" > /etc/apt/sources.list.d/cloudflare-client.list
 apt-get update -qq && apt-get install -y -qq cloudflare-warp >/dev/null 2>&1
 echo "installed"
 """
@@ -1710,7 +1711,9 @@ if ! warp-cli --accept-tos registration show >/dev/null 2>&1; then
 fi
 warp-cli --accept-tos mode proxy 2>/dev/null || true
 warp-cli --accept-tos proxy port 40000 2>/dev/null || true
+sleep 1
 warp-cli --accept-tos connect 2>/dev/null || true
+sleep 2
 echo "ok"
 """], capture_output=True, text=True, timeout=30)
         license_key = get_setting("warp_license_key", "")
@@ -1726,8 +1729,8 @@ echo "ok"
 async def api_warp_test(user: str = Depends(get_current_user)):
     try:
         r = subprocess.run(
-            ["curl", "-s", "--max-time", "5", "--socks5", f"127.0.0.1:{WARP_SOCKS_PORT}", "https://ifconfig.me"],
-            capture_output=True, text=True, timeout=10
+            ["curl", "-s", "--max-time", "10", "--socks5", f"127.0.0.1:{WARP_SOCKS_PORT}", "https://ifconfig.me"],
+            capture_output=True, text=True, timeout=15
         )
         if r.returncode == 0 and r.stdout.strip():
             return {"success": True, "ip": r.stdout.strip()}
@@ -1736,50 +1739,95 @@ async def api_warp_test(user: str = Depends(get_current_user)):
         return {"success": False, "error": str(e)}
 
 
+@app.get("/api/warp/status")
+async def api_warp_status(user: str = Depends(get_current_user)):
+    installed = False
+    connected = False
+    mode = "unknown"
+    account = ""
+    try:
+        r = subprocess.run(["which", "warp-cli"], capture_output=True, text=True, timeout=5)
+        installed = r.returncode == 0
+    except:
+        pass
+    if installed:
+        try:
+            r = subprocess.run(["warp-cli", "--accept-tos", "status"], capture_output=True, text=True, timeout=5)
+            out = r.stdout.lower()
+            connected = "connected" in out and "disconnected" not in out
+            if "warp+" in out:
+                account = "WARP+"
+            elif "warp" in out:
+                account = "WARP Free"
+        except:
+            pass
+        try:
+            r = subprocess.run(["warp-cli", "--accept-tos", "settings"], capture_output=True, text=True, timeout=5)
+            if "proxy" in r.stdout.lower():
+                mode = "proxy"
+        except:
+            pass
+    return {
+        "installed": installed,
+        "connected": connected,
+        "mode": mode,
+        "account": account,
+        "socks_port": WARP_SOCKS_PORT
+    }
+
+
 def _apply_warp_routing(mode, domains_str=""):
     if mode == "off":
         _remove_warp_outbound()
         return
     outbounds = _get_xray_outbounds()
-    warp_ob = {
-        "tag": "warp",
+    outbounds = [o for o in outbounds if o.get("tag") not in ("warp", "warp-socks5")]
+    outbounds.append({
+        "tag": "warp-socks5",
         "protocol": "socks",
         "settings": {
             "servers": [{"address": "127.0.0.1", "port": WARP_SOCKS_PORT}]
         }
-    }
-    outbounds = [o for o in outbounds if o.get("tag") != "warp"]
-    outbounds.append(warp_ob)
+    })
+    outbounds.append({
+        "tag": "warp",
+        "protocol": "freedom",
+        "proxySettings": {"tag": "warp-socks5"},
+        "settings": {"domainStrategy": "UseIPv4"}
+    })
     _set_xray_outbounds(outbounds)
+    rules = json.loads(get_setting("custom_routing_rules", "[]") or "[]")
+    rules = [r for r in rules if r.get("outboundTag") not in ("warp", "warp-socks5")]
     if mode == "all":
-        rules = json.loads(get_setting("custom_routing_rules", "[]") or "[]")
-        rules = [r for r in rules if r.get("outboundTag") != "warp"]
         rules.insert(0, {
             "type": "field",
             "outboundTag": "warp",
             "network": "tcp,udp"
         })
-        set_setting("custom_routing_rules", json.dumps(rules))
     elif mode == "geo":
         domains = [d.strip() for d in domains_str.split(",") if d.strip()]
         if domains:
-            rules = json.loads(get_setting("custom_routing_rules", "[]") or "[]")
-            rules = [r for r in rules if r.get("outboundTag") != "warp"]
+            domain_rules = []
+            for d in domains:
+                if d.startswith("geosite:") or d.startswith("regexp:") or d.startswith("domain:"):
+                    domain_rules.append(d)
+                else:
+                    domain_rules.append(f"domain:{d}")
             rules.insert(0, {
                 "type": "field",
-                "domain": [f"domain:{d}" for d in domains],
+                "domain": domain_rules,
                 "outboundTag": "warp"
             })
-            set_setting("custom_routing_rules", json.dumps(rules))
+    set_setting("custom_routing_rules", json.dumps(rules))
     restart_xray()
 
 
 def _remove_warp_outbound():
     outbounds = _get_xray_outbounds()
-    outbounds = [o for o in outbounds if o.get("tag") != "warp"]
+    outbounds = [o for o in outbounds if o.get("tag") not in ("warp", "warp-socks5")]
     _set_xray_outbounds(outbounds)
     rules = json.loads(get_setting("custom_routing_rules", "[]") or "[]")
-    rules = [r for r in rules if r.get("outboundTag") != "warp"]
+    rules = [r for r in rules if r.get("outboundTag") not in ("warp", "warp-socks5")]
     set_setting("custom_routing_rules", json.dumps(rules))
     restart_xray()
 

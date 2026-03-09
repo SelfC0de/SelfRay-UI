@@ -204,23 +204,25 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
     </div>
     <div class="card">
         <h3>Cloudflare WARP+ Outbound</h3>
-        <p style="font-size:11px;color:var(--muted);margin-bottom:10px">Route traffic through Cloudflare WARP to unlock geo-blocked services (Netflix, ChatGPT, etc.) and hide your server IP from destination sites.</p>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:6px">Route traffic through Cloudflare WARP (SOCKS5 → 127.0.0.1:40000). Hides server IP, unlocks geo-blocked services.</p>
+        <div id="warp-svc-status" style="margin-bottom:8px"></div>
         <div id="warp-status" style="margin-bottom:8px"></div>
         <div class="fr">
             <div class="fg"><label>WARP Mode</label>
                 <select id="warp-mode">
                     <option value="off">Disabled</option>
                     <option value="all">All traffic via WARP</option>
-                    <option value="geo">Only geo-blocked domains</option>
+                    <option value="geo">Only specific domains</option>
                 </select>
             </div>
-            <div class="fg"><label>WARP License Key (optional)</label><input type="text" id="warp-key" placeholder="xxxxxxxx-xxxxxxxx-xxxxxxxx"></div>
+            <div class="fg"><label>WARP+ License Key (optional)</label><input type="text" id="warp-key" placeholder="xxxxxxxx-xxxxxxxx-xxxxxxxx"></div>
         </div>
         <div id="warp-geo-domains" style="display:none">
-            <div class="fg"><label>Domains via WARP (comma-separated)</label><textarea id="warp-domains" placeholder="netflix.com, openai.com, chatgpt.com, spotify.com, disney.com"></textarea></div>
+            <div class="fg"><label>Domains via WARP</label><textarea id="warp-domains" placeholder="geosite:openai, geosite:netflix, geosite:google, geosite:spotify, chatgpt.com, disney.com"></textarea></div>
+            <p style="font-size:10px;color:var(--muted);margin-top:-6px">Comma-separated. Supports: <code>geosite:netflix</code>, <code>domain:example.com</code>, <code>regexp:.*\.ru$</code></p>
         </div>
-        <div class="bg" style="margin-top:8px">
-            <button class="btn btn-p" onclick="saveWarp()">Save WARP Settings</button>
+        <div class="bg" style="margin-top:8px;flex-wrap:wrap;gap:6px">
+            <button class="btn btn-p" onclick="saveWarp()">Save Settings</button>
             <button class="btn btn-o" onclick="installWarp()">Install WARP</button>
             <button class="btn btn-o" onclick="testWarp()">Test Connection</button>
         </div>
@@ -977,16 +979,16 @@ async function saveWarp(){
     const key=document.getElementById('warp-key').value;
     const domains=document.getElementById('warp-domains').value;
     const r=await api('/api/warp/save',{method:'POST',body:JSON.stringify({mode:mode,license_key:key,domains:domains})});
-    if(r&&r.success)toast('WARP settings saved','ok');else toast(r&&r.error||'Error','err');
+    if(r&&r.success){toast('WARP settings saved & xray restarted','ok');loadWarpStatus()}else toast(r&&r.error||'Error','err');
 }
 async function installWarp(){
     const btn=event.target;btn.textContent='Installing...';btn.disabled=true;
     const r=await api('/api/warp/install',{method:'POST'});
     btn.disabled=false;btn.textContent='Install WARP';
-    if(r&&r.success)toast('WARP installed','ok');else toast(r&&r.error||'Failed','err');
-    loadWarpStatus();
+    if(r&&r.success){toast('WARP installed & connected','ok');loadWarpStatus()}else toast(r&&r.error||'Failed','err');
 }
 async function testWarp(){
+    toast('Testing WARP connection...','info');
     const r=await api('/api/warp/test',{method:'POST'});
     if(r&&r.success)toast('WARP IP: '+r.ip,'ok');else toast(r&&r.error||'Not connected','err');
 }
@@ -995,11 +997,24 @@ async function loadWarpStatus(){
     const mode=s.warp_mode||'off';
     document.getElementById('warp-mode').value=mode;
     document.getElementById('warp-key').value=s.warp_license_key||'';
-    document.getElementById('warp-domains').value=s.warp_domains||'netflix.com, openai.com, chatgpt.com, spotify.com, disney.com';
+    document.getElementById('warp-domains').value=s.warp_domains||'geosite:openai, geosite:netflix, geosite:google, geosite:spotify, chatgpt.com, disney.com';
     document.getElementById('warp-geo-domains').style.display=mode==='geo'?'':'none';
     const el=document.getElementById('warp-status');
-    if(mode==='off')el.innerHTML='<span class="badge b-off">WARP Off</span>';
-    else el.innerHTML='<span class="badge b-on">WARP '+mode+'</span>';
+    if(mode==='off')el.innerHTML='<span class="badge b-off">Routing: Off</span>';
+    else el.innerHTML='<span class="badge b-on">Routing: '+mode+'</span>';
+    try{
+        const ws=await api('/api/warp/status');
+        const sel=document.getElementById('warp-svc-status');
+        if(!ws){sel.innerHTML='';return}
+        let h='';
+        if(!ws.installed)h='<span class="badge b-off">Not installed</span> <span style="font-size:11px;color:var(--muted)">Click "Install WARP" to set up</span>';
+        else{
+            h=ws.connected?'<span class="badge b-on">Connected</span>':'<span class="badge b-off">Disconnected</span>';
+            if(ws.account)h+=' <span class="badge b-pr">'+ws.account+'</span>';
+            h+=' <span style="font-size:11px;color:var(--muted)">SOCKS5 → 127.0.0.1:'+ws.socks_port+'</span>';
+        }
+        sel.innerHTML=h;
+    }catch(e){}
 }
 
 const WL={
