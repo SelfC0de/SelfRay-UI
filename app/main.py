@@ -1100,7 +1100,8 @@ def core_create_inbound(protocol, port, listen="", remark="", network="tcp", sec
         pass
 
     conn.close()
-    restart_xray()
+    if not kwargs.get("_skip_restart"):
+        restart_xray()
     return {"success": True, "id": inbound_id, "link": link}
 
 
@@ -1247,11 +1248,13 @@ async def api_auto_generate(request: Request, user: str = Depends(get_current_us
             kwargs["xhttp_path"] = "/" + secrets.token_hex(4)
 
         try:
+            kwargs["_skip_restart"] = True
             r = core_create_inbound(**kwargs)
             results.append({"port": port, "success": r.get("success", False), "id": r.get("id"), "error": r.get("error")})
         except Exception as e:
             results.append({"port": port, "success": False, "error": str(e)})
 
+    restart_xray()
     ok = sum(1 for r in results if r["success"])
     return {"success": True, "generated": ok, "total": len(results), "details": results}
 
