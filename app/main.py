@@ -1078,13 +1078,26 @@ def core_create_inbound(protocol, port, listen="", remark="", network="tcp", sec
             (client_id, inbound_id, cname, client_uuid, data.flow if data.protocol == "vless" else "", traffic_limit)
         )
         conn.commit()
-        try:
-            ib_row = conn.execute("SELECT * FROM inbounds WHERE id=?", (inbound_id,)).fetchone()
-            cl_row = conn.execute("SELECT * FROM clients WHERE id=?", (client_id,)).fetchone()
-            if ib_row and cl_row:
-                link = _generate_link(dict(ib_row), dict(cl_row))
-        except:
-            pass
+    else:
+        client_id = secrets.token_hex(8)
+        cname = data.client_name or "default-user"
+        ss_pass = data.ss_password or secrets.token_urlsafe(16)
+        traffic_limit = int(data.first_client_traffic_gb * 1024 * 1024 * 1024) if data.first_client_traffic_gb > 0 else 0
+        conn.execute(
+            "INSERT INTO clients (id, inbound_id, email, uuid, flow, traffic_limit) VALUES (?,?,?,?,?,?)",
+            (client_id, inbound_id, cname, ss_pass, "", traffic_limit)
+        )
+        conn.commit()
+
+    try:
+        ib_row = conn.execute("SELECT * FROM inbounds WHERE id=?", (inbound_id,)).fetchone()
+        cl_row = conn.execute("SELECT * FROM clients WHERE id=?", (client_id,)).fetchone()
+        if ib_row and cl_row:
+            link = _generate_link(ib_row["protocol"], dict(cl_row), dict(ib_row),
+                                  json.loads(ib_row["stream_settings"]), json.loads(ib_row["settings"]),
+                                  ib_row["listen"] or "SERVER_IP")
+    except:
+        pass
 
     conn.close()
     restart_xray()
