@@ -26,23 +26,31 @@ apt update && apt upgrade -y
 bash <(curl -Ls https://raw.githubusercontent.com/SelfC0de/SelfRay-UI/main/install.sh)
 ```
 
-**4. After install you'll see credentials — save them:**
+**4. During install you'll be asked about SSL:**
 
 ```
-  Panel:  http://YOUR_IP:8443
+  Your server IP: 103.80.86.204
 
-  ┌──────────────────────────────────────────┐
-  │   Login:     admin                       │
-  │   Password:  aBcDeFgHiJkL               │
-  └──────────────────────────────────────────┘
+  Do you have a domain pointed to this server?
+  (A-record → 103.80.86.204)
 
-  ⚠  SAVE THESE CREDENTIALS!
+  Enter domain (or press Enter to skip): vpn.example.com
 ```
 
-**5. Open panel in browser**
+**With domain** — Let's Encrypt certificate is issued automatically. Panel works over trusted HTTPS. VPN apps accept subscriptions without warnings.
+
+**Without domain** — self-signed certificate is generated (10 years). Panel works over HTTPS but browsers will show a security warning. You can add a domain later in Settings → SSL.
+
+**5. Save your credentials:**
 
 ```
-http://YOUR_IP:8443
+  ✅ Installation complete!
+
+  Panel URL    https://vpn.example.com:8443/login
+  Login        admin
+  Password     aBcDeFgHiJkL
+
+  ⚠  Save your credentials! They won't show again.
 ```
 
 ---
@@ -55,26 +63,52 @@ http://YOUR_IP:8443
 | VLESS + TLS | ✅ |
 | VLESS + WebSocket | ✅ |
 | VMess + WS / TCP / gRPC | ✅ |
-| Trojan + TLS / Reality | ✅ |
+| Trojan + TCP / gRPC + Reality | ✅ |
 | Shadowsocks (2022) | ✅ |
-| Transport: TCP (RAW), WS, gRPC, H2, HTTPUpgrade | ✅ |
+| XHTTP (SplitHTTP) transport | ✅ |
+| Transport: TCP, WS, gRPC, H2, HTTPUpgrade, XHTTP | ✅ |
 | Security: None, TLS, Reality | ✅ |
-| uTLS: chrome, firefox, safari, ios, android, edge, 360, qq, random, randomized, unsafe | ✅ |
+| uTLS fingerprints (chrome, firefox, safari, etc.) | ✅ |
 | Multi-client per inbound | ✅ |
-| Client traffic limit (GB) | ✅ |
+| Auto-Generate 10 random inbounds | ✅ |
+| Inbound presets (Speed, Stealth, Streaming, Gaming) | ✅ |
+| Client traffic limit (MB / GB / TB) | ✅ |
 | Client expiry (days) | ✅ |
 | Client IP limit | ✅ |
+| Traffic progress bar with remaining | ✅ |
+| Online users indicator | ✅ |
 | Subscription links (/sub/) | ✅ |
-| Connection links (vless://, vmess://, etc) | ✅ |
+| Connection links (vless://, vmess://, ss://, trojan://) | ✅ |
+| SSL: Let's Encrypt + self-signed | ✅ |
+| 2FA (TOTP) authentication | ✅ |
+| Telegram bot (status, change password/port) | ✅ |
+| Telegram notifications (login, expiry, traffic) | ✅ |
+| Cloudflare WARP+ outbound | ✅ |
+| RU Whitelist routing (auto-update from GitHub) | ✅ |
+| Fake website (20+ templates) | ✅ |
 | Block BitTorrent | ✅ |
-| Custom DNS | ✅ |
-| Custom routing rules | ✅ |
-| Xray auto-install from GitHub | ✅ |
-| Database backup/export | ✅ |
-| Reality key generation (in panel) | ✅ |
-| Sniffing configuration | ✅ |
-| systemd service | ✅ |
+| Custom DNS / routing rules | ✅ |
+| Database backup | ✅ |
+| Reality key generation | ✅ |
 | Docker support | ✅ |
+
+---
+
+## SSL Certificate
+
+### Option A: Domain + Let's Encrypt (recommended)
+
+1. Get a free domain (e.g. freedns.afraid.org, duckdns.org)
+2. Create A-record pointing to your server IP
+3. Enter domain during installation — certificate is issued automatically
+4. Panel URL: `https://yourdomain.com:8443/login`
+
+### Option B: Without domain (self-signed)
+
+1. Press Enter when asked for domain during installation
+2. Panel URL: `https://YOUR_IP:8443/login`
+3. Browser will show "Connection not secure" — click "Advanced" → "Proceed"
+4. You can add a domain later: Settings → SSL → enter domain → Issue Let's Encrypt
 
 ---
 
@@ -83,6 +117,7 @@ http://YOUR_IP:8443
 - Ubuntu 20.04+ / Debian 11+ / CentOS 8+
 - Root access
 - Open port 8443 (panel) + your inbound ports (e.g. 443)
+- Port 80 free (for Let's Encrypt, only during certificate issuance)
 
 ---
 
@@ -126,41 +161,7 @@ docker logs selfray-ui 2>&1 | grep Password
 **4. Open panel**
 
 ```
-http://YOUR_IP:8443
-```
-
----
-
-## Manual Install
-
-**1. Clone repository**
-
-```bash
-git clone https://github.com/SelfC0de/SelfRay-UI.git /opt/selfray-ui
-cd /opt/selfray-ui
-```
-
-**2. Create Python environment**
-
-```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
-
-**3. Install xray-core**
-
-```bash
-mkdir -p xray
-wget https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip -O /tmp/xray.zip
-unzip /tmp/xray.zip -d xray/
-chmod +x xray/xray
-```
-
-**4. Run**
-
-```bash
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8443
+https://YOUR_IP:8443/login
 ```
 
 ---
