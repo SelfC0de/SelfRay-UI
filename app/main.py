@@ -1114,7 +1114,7 @@ def core_create_inbound(protocol, port, listen="", remark="", network="tcp", sec
         if ib_row and cl_row:
             link = _generate_link(ib_row["protocol"], dict(cl_row), dict(ib_row),
                                   json.loads(ib_row["stream_settings"]), json.loads(ib_row["settings"]),
-                                  ib_row["listen"] or "SERVER_IP")
+                                  ib_row["listen"] or _get_real_ip() or "SERVER_IP")
     except:
         pass
 
@@ -1625,8 +1625,8 @@ async def api_client_link(client_id: str, request: Request, user: str = Depends(
     if not ib:
         raise HTTPException(404)
     host = request.headers.get("host", "").split(":")[0]
-    if not host or host in ("0.0.0.0", "127.0.0.1"):
-        host = "YOUR_SERVER_IP"
+    if not host or host in ("0.0.0.0", "127.0.0.1", "localhost"):
+        host = _get_real_ip() or "YOUR_SERVER_IP"
     stream = json.loads(ib["stream_settings"])
     settings = json.loads(ib["settings"])
     link = _generate_link(ib["protocol"], dict(client), dict(ib), stream, settings, host)
@@ -1764,7 +1764,7 @@ async def subscription(token: str, request: Request):
 
     host = request.headers.get("host", "").split(":")[0]
     if not host or host in ("0.0.0.0", "127.0.0.1", "localhost"):
-        host = _get_server_ip(request)
+        host = _get_real_ip() or "SERVER_IP"
 
     links = []
     for cl in all_clients:
