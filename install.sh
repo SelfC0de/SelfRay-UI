@@ -9,45 +9,101 @@ M='\033[0;35m'
 B='\033[1m'
 D='\033[2m'
 N='\033[0m'
+BG_D='\033[48;5;234m'
+W='\033[0;37m'
+BC='\033[1;36m'
+BG='\033[1;32m'
+BY='\033[1;33m'
+BR='\033[1;31m'
+BM='\033[1;35m'
 
 REPO="SelfC0de/SelfRay-UI"
 INSTALL_DIR="/opt/selfray-ui"
 SERVICE_NAME="selfray-ui"
 PANEL_PORT=8443
 
-ok()  { echo -e "  ${G}●${N} $1"; }
-inf() { echo -e "  ${C}◆${N} $1"; }
-wrn() { echo -e "  ${Y}▲${N} $1"; }
-err() { echo -e "  ${R}✕${N} $1"; }
-step(){ echo -e "\n${M}━━━${N} ${B}$1${N} ${M}━━━${N}"; }
+spin(){
+    local pid=$1 msg=$2
+    local sp='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    local i=0
+    while kill -0 "$pid" 2>/dev/null; do
+        printf "\r  ${C}${sp:i++%${#sp}:1}${N} ${D}${msg}${N}  "
+        sleep 0.1
+    done
+    wait "$pid" 2>/dev/null
+    printf "\r                                                          \r"
+}
+
+ok()  { echo -e "  ${BG}✔${N}  $1"; }
+inf() { echo -e "  ${BC}ℹ${N}  $1"; }
+wrn() { echo -e "  ${BY}⚠${N}  $1"; }
+err() { echo -e "  ${BR}✘${N}  $1"; }
+
+step(){
+    local num=$1 title=$2
+    echo ""
+    echo -e "  ${BG_D} ${BC}${num}${N}${BG_D} ${N} ${B}${title}${N}"
+    echo -e "  ${D}$(printf '%.0s─' {1..46})${N}"
+}
+
+progress(){
+    local pct=$1 w=40
+    local filled=$((pct * w / 100))
+    local empty=$((w - filled))
+    printf "\r  ${D}[${N}"
+    printf "${C}%0.s█${N}" $(seq 1 $filled 2>/dev/null) 2>/dev/null
+    printf "${D}%0.s░${N}" $(seq 1 $empty 2>/dev/null) 2>/dev/null
+    printf "${D}]${N} ${B}${pct}%%${N}  "
+}
 
 clear
 echo ""
-echo -e "${C}  ┌─────────────────────────────────────────────┐${N}"
-echo -e "${C}  │                                             │${N}"
-echo -e "${C}  │   ${B}⚡ SelfRay-UI${N}${C}                             │${N}"
-echo -e "${C}  │   ${D}Xray Panel Manager${N}${C}                        │${N}"
-echo -e "${C}  │   ${D}t.me/selfcode_dev${N}${C}                         │${N}"
-echo -e "${C}  │                                             │${N}"
-echo -e "${C}  └─────────────────────────────────────────────┘${N}"
 echo ""
+sleep 0.1
+echo -e "        ${C}╔══════════════════════════════════════╗${N}"
+sleep 0.05
+echo -e "        ${C}║${N}                                      ${C}║${N}"
+sleep 0.05
+echo -e "        ${C}║${N}    ${B}⚡ ${BC}S${C}elf${BC}R${C}ay${BC}-UI${N}                    ${C}║${N}"
+sleep 0.05
+echo -e "        ${C}║${N}                                      ${C}║${N}"
+sleep 0.05
+echo -e "        ${C}║${N}    ${D}Xray Management Panel${N}             ${C}║${N}"
+sleep 0.05
+echo -e "        ${C}║${N}    ${D}Fast · Lightweight · Secure${N}       ${C}║${N}"
+sleep 0.05
+echo -e "        ${C}║${N}                                      ${C}║${N}"
+sleep 0.05
+echo -e "        ${C}║${N}    ${D}github.com/SelfC0de/SelfRay-UI${N}   ${C}║${N}"
+sleep 0.05
+echo -e "        ${C}║${N}    ${D}t.me/selfcode_dev${N}                ${C}║${N}"
+sleep 0.05
+echo -e "        ${C}║${N}                                      ${C}║${N}"
+sleep 0.05
+echo -e "        ${C}╚══════════════════════════════════════╝${N}"
+echo ""
+sleep 0.3
 
 if [ "$EUID" -ne 0 ]; then
-    err "Run as root!"
-    echo -e "  ${D}sudo bash <(curl -Ls https://raw.githubusercontent.com/${REPO}/main/install.sh)${N}"
+    err "Root access required!"
+    echo -e "  ${D}Run: sudo bash <(curl -Ls https://raw.githubusercontent.com/${REPO}/main/install.sh)${N}"
     exit 1
 fi
 
-# ── Step 1 ──
-step "Installing system dependencies"
-apt-get update -qq > /dev/null 2>&1
-apt-get install -y -qq python3 python3-pip python3-venv unzip wget curl git > /dev/null 2>&1
-ok "System dependencies : Installed"
+# ══════════════════════════════════════
+#  STEP 1: System Dependencies
+# ══════════════════════════════════════
+step "01" "System Dependencies"
+(apt-get update -qq > /dev/null 2>&1 && apt-get install -y -qq python3 python3-pip python3-venv unzip wget curl git > /dev/null 2>&1) &
+spin $! "Installing packages..."
+ok "System packages ready"
 
-# ── Step 2 ──
-step "Downloading SelfRay-UI"
+# ══════════════════════════════════════
+#  STEP 2: Download Panel
+# ══════════════════════════════════════
+step "02" "Downloading SelfRay-UI"
 if [ -d "$INSTALL_DIR" ]; then
-    wrn "Existing installation found"
+    wrn "Previous installation found"
     if [ -f "$INSTALL_DIR/data/selfray.db" ]; then
         cp "$INSTALL_DIR/data/selfray.db" /tmp/selfray_backup.db 2>/dev/null
         ok "Database backed up"
@@ -55,25 +111,30 @@ if [ -d "$INSTALL_DIR" ]; then
     rm -rf "$INSTALL_DIR"
 fi
 
-git clone --depth 1 "https://github.com/${REPO}.git" "$INSTALL_DIR" > /dev/null 2>&1
-ok "Cloned from GitHub"
+(git clone --depth 1 "https://github.com/${REPO}.git" "$INSTALL_DIR" > /dev/null 2>&1) &
+spin $! "Cloning repository..."
+ok "Repository cloned"
 
 if [ -f /tmp/selfray_backup.db ]; then
     mkdir -p "$INSTALL_DIR/data"
     mv /tmp/selfray_backup.db "$INSTALL_DIR/data/selfray.db"
-    ok "Database restored"
+    ok "Database restored from backup"
 fi
 
-# ── Step 3 ──
-step "Setting up Python environment"
-python3 -m venv "$INSTALL_DIR/venv"
+# ══════════════════════════════════════
+#  STEP 3: Python Environment
+# ══════════════════════════════════════
+step "03" "Python Environment"
+(python3 -m venv "$INSTALL_DIR/venv" && source "$INSTALL_DIR/venv/bin/activate" && pip install --quiet --no-cache-dir -r "$INSTALL_DIR/requirements.txt") &
+spin $! "Setting up virtual environment..."
 source "$INSTALL_DIR/venv/bin/activate"
-pip install --quiet --no-cache-dir -r "$INSTALL_DIR/requirements.txt"
-ok "Virtual environment ready"
+ok "Python environment ready"
 ok "Dependencies installed"
 
-# ── Step 4 ──
-step "Downloading Xray-core"
+# ══════════════════════════════════════
+#  STEP 4: Xray Core
+# ══════════════════════════════════════
+step "04" "Xray Core"
 mkdir -p "$INSTALL_DIR/xray"
 ARCH=$(uname -m)
 case $ARCH in
@@ -83,31 +144,33 @@ case $ARCH in
     armv6l)        XRAY_ARCH="arm32-v6" ;;
     *)             XRAY_ARCH="64" ;;
 esac
-wget -q "https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-${XRAY_ARCH}.zip" -O /tmp/xray.zip
-unzip -o /tmp/xray.zip -d "$INSTALL_DIR/xray" > /dev/null 2>&1
-chmod +x "$INSTALL_DIR/xray/xray"
-rm -f /tmp/xray.zip
-XRAY_VER=$("$INSTALL_DIR/xray/xray" version 2>/dev/null | head -1 | awk '{print $2}' || echo "unknown")
-ok "Xray-core: ${C}${XRAY_VER}${N} : Installed"
+(wget -q "https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-${XRAY_ARCH}.zip" -O /tmp/xray.zip && unzip -o /tmp/xray.zip -d "$INSTALL_DIR/xray" > /dev/null 2>&1 && chmod +x "$INSTALL_DIR/xray/xray" && rm -f /tmp/xray.zip) &
+spin $! "Downloading latest Xray-core..."
+XRAY_VER=$("$INSTALL_DIR/xray/xray" version 2>/dev/null | head -1 | awk '{print $2}' || echo "?")
+ok "Xray-core ${BC}v${XRAY_VER}${N} installed"
 
-# ── Step 5 ──
-step "SSL Certificate Setup"
+# ══════════════════════════════════════
+#  STEP 5: SSL Certificate
+# ══════════════════════════════════════
+step "05" "SSL Certificate"
 CERT_DIR="$INSTALL_DIR/data/cert"
 mkdir -p "$CERT_DIR"
 SERVER_IP=$(curl -s4 --max-time 5 ifconfig.me 2>/dev/null || curl -s4 --max-time 5 api.ipify.org 2>/dev/null || echo "127.0.0.1")
 SSL_DOMAIN=""
 
 echo ""
-echo -e "  ${B}Your server IP:${N} ${C}${SERVER_IP}${N}"
+echo -e "  ${B}Your server IP: ${BC}${SERVER_IP}${N}"
 echo ""
-echo -e "  ${B}Do you have a domain pointed to this server?${N}"
-echo -e "  ${D}(A-record → ${SERVER_IP})${N}"
+echo -e "  ${D}A domain with Let's Encrypt gives you trusted HTTPS.${N}"
+echo -e "  ${D}Without a domain, a self-signed certificate will be used.${N}"
 echo ""
-read -p "  Enter domain (or press Enter to skip): " SSL_DOMAIN
+echo -e "  ${D}Point your domain A-record → ${W}${SERVER_IP}${N}"
+echo ""
+read -p "  $(echo -e "${BY}?${N}") Enter domain (or press Enter to skip): " SSL_DOMAIN
 echo ""
 
 if [ -n "$SSL_DOMAIN" ]; then
-    inf "Issuing Let's Encrypt certificate for ${C}${SSL_DOMAIN}${N}..."
+    inf "Issuing Let's Encrypt certificate for ${BC}${SSL_DOMAIN}${N}"
     apt-get install -y -qq certbot > /dev/null 2>&1
     certbot certonly --standalone --preferred-challenges http --http-01-port 80 \
         -d "$SSL_DOMAIN" --agree-tos --non-interactive --register-unsafely-without-email \
@@ -117,9 +180,9 @@ if [ -n "$SSL_DOMAIN" ]; then
     if [ -f "$LE_CERT" ] && [ -f "$LE_KEY" ]; then
         cp "$LE_CERT" "$CERT_DIR/fullchain.pem"
         cp "$LE_KEY" "$CERT_DIR/privkey.pem"
-        ok "Let's Encrypt certificate issued for ${C}${SSL_DOMAIN}${N}"
+        ok "Let's Encrypt certificate for ${BC}${SSL_DOMAIN}${N} ${BG}✔${N}"
     else
-        wrn "Let's Encrypt failed. Generating self-signed certificate..."
+        wrn "Let's Encrypt failed — falling back to self-signed"
         SSL_DOMAIN=""
     fi
 fi
@@ -131,14 +194,16 @@ if [ -z "$SSL_DOMAIN" ]; then
             -days 3650 -nodes \
             -subj "/CN=SelfRay-UI" \
             -addext "subjectAltName=IP:${SERVER_IP},DNS:localhost,IP:127.0.0.1" 2>/dev/null
-        ok "Self-signed certificate generated (10 years)"
+        ok "Self-signed certificate (10 years)"
     else
         ok "Existing certificate preserved"
     fi
 fi
 
-# ── Step 6 ──
-step "Creating systemd service"
+# ══════════════════════════════════════
+#  STEP 6: Systemd Service
+# ══════════════════════════════════════
+step "06" "System Service"
 cat > /etc/systemd/system/${SERVICE_NAME}.service << EOF
 [Unit]
 Description=SelfRay-UI Panel
@@ -159,17 +224,20 @@ systemctl daemon-reload
 systemctl enable ${SERVICE_NAME} > /dev/null 2>&1
 ok "Service created & enabled"
 
-# ── Step 6 ──
-step "Creating management command"
+# ══════════════════════════════════════
+#  STEP 7: Management Command
+# ══════════════════════════════════════
+step "07" "Management CLI"
 cat > /usr/local/bin/selfray << 'MGMT'
 #!/bin/bash
 R='\033[0;31m';G='\033[0;32m';C='\033[0;36m';Y='\033[1;33m';M='\033[0;35m';B='\033[1m';D='\033[2m';N='\033[0m'
+BC='\033[1;36m';BG='\033[1;32m';BY='\033[1;33m';BR='\033[1;31m'
 SERVICE="selfray-ui"
 DIR="/opt/selfray-ui"
-ok()  { echo -e "  ${G}●${N} $1"; }
-inf() { echo -e "  ${C}◆${N} $1"; }
-wrn() { echo -e "  ${Y}▲${N} $1"; }
-err() { echo -e "  ${R}✕${N} $1"; }
+ok()  { echo -e "  ${BG}✔${N}  $1"; }
+inf() { echo -e "  ${BC}ℹ${N}  $1"; }
+wrn() { echo -e "  ${BY}⚠${N}  $1"; }
+err() { echo -e "  ${BR}✘${N}  $1"; }
 case "$1" in
     start)   systemctl start $SERVICE && ok "Started" ;;
     stop)    systemctl stop $SERVICE && wrn "Stopped" ;;
@@ -221,35 +289,40 @@ print()
         fi ;;
     *)
         echo ""
-        echo -e "  ${C}${B}⚡ SelfRay-UI${N}"
+        echo -e "  ${BC}⚡ SelfRay-UI${N} ${D}— Management CLI${N}"
         echo ""
         echo -e "  ${B}Usage:${N} selfray <command>"
         echo ""
-        echo -e "  ${G}start${N}           Start panel"
-        echo -e "  ${R}stop${N}            Stop panel"
-        echo -e "  ${C}restart${N}         Restart panel"
-        echo -e "  ${C}status${N}          Show service status"
-        echo -e "  ${C}log${N}             View live logs"
-        echo -e "  ${Y}creds${N}           Show saved credentials"
-        echo -e "  ${Y}reset-password${N}  Generate new admin password"
-        echo -e "  ${M}update${N}          Update from GitHub"
-        echo -e "  ${R}uninstall${N}       Remove completely"
+        echo -e "    ${BG}start${N}            Start panel"
+        echo -e "    ${BR}stop${N}             Stop panel"
+        echo -e "    ${BC}restart${N}          Restart panel"
+        echo -e "    ${BC}status${N}           Show service status"
+        echo -e "    ${BC}log${N}              View live logs"
+        echo -e "    ${BY}creds${N}            Show saved credentials"
+        echo -e "    ${BY}reset-password${N}   Generate new admin password"
+        echo -e "    ${M}update${N}           Update from GitHub"
+        echo -e "    ${BR}uninstall${N}        Remove completely"
         echo "" ;;
 esac
 MGMT
 chmod +x /usr/local/bin/selfray
-ok "Command 'selfray' installed"
+ok "CLI command ${BC}selfray${N} installed"
 
-# ── Start ──
-step "Starting SelfRay-UI"
+# ══════════════════════════════════════
+#  LAUNCH
+# ══════════════════════════════════════
+step "⚡" "Launching SelfRay-UI"
+
+progress 20
 systemctl restart ${SERVICE_NAME}
-sleep 3
+progress 50
+sleep 1
+progress 70
 
 if [ -z "$SERVER_IP" ]; then
     SERVER_IP=$(curl -s4 --max-time 5 ifconfig.me 2>/dev/null || curl -s4 --max-time 5 api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}')
 fi
 
-# Save SSL domain in DB if set
 if [ -n "$SSL_DOMAIN" ]; then
     source "$INSTALL_DIR/venv/bin/activate"
     python3 -c "
@@ -261,8 +334,10 @@ set_setting('ssl_cert_path', '$CERT_DIR/fullchain.pem')
 set_setting('ssl_key_path', '$CERT_DIR/privkey.pem')
 " 2>/dev/null
     systemctl restart ${SERVICE_NAME}
-    sleep 2
 fi
+
+progress 90
+sleep 1
 
 ADMIN_PASS=""
 for i in 1 2 3; do
@@ -270,39 +345,48 @@ for i in 1 2 3; do
     [ -n "$ADMIN_PASS" ] && break; sleep 2
 done
 
+progress 100
+echo ""
+sleep 0.3
+
 if [ -n "$SSL_DOMAIN" ]; then
     PANEL_URL="https://${SSL_DOMAIN}:${PANEL_PORT}/login"
+    SSL_BADGE="${BG}Let's Encrypt ✔${N}"
 else
     PANEL_URL="https://${SERVER_IP}:${PANEL_PORT}/login"
+    SSL_BADGE="${BY}Self-Signed${N}"
 fi
 
 echo ""
-echo -e "${G}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${N}"
 echo ""
-echo -e "  ${G}${B}✅ Installation complete!${N}"
+echo -e "  ${C}╔══════════════════════════════════════════════════════╗${N}"
+echo -e "  ${C}║${N}                                                      ${C}║${N}"
+echo -e "  ${C}║${N}   ${BG}✅  Installation Complete!${N}                         ${C}║${N}"
+echo -e "  ${C}║${N}                                                      ${C}║${N}"
+echo -e "  ${C}╠══════════════════════════════════════════════════════╣${N}"
+echo -e "  ${C}║${N}                                                      ${C}║${N}"
+echo -e "  ${C}║${N}   ${D}Panel URL${N}   ${BC}${PANEL_URL}${N}"
+echo -e "  ${C}║${N}   ${D}Login${N}       ${BY}admin${N}"
+echo -e "  ${C}║${N}   ${D}Password${N}    ${BY}${ADMIN_PASS:-selfray creds}${N}"
+echo -e "  ${C}║${N}   ${D}SSL${N}         ${SSL_BADGE}"
+echo -e "  ${C}║${N}   ${D}Xray${N}        ${BC}v${XRAY_VER}${N}"
+echo -e "  ${C}║${N}                                                      ${C}║${N}"
+echo -e "  ${C}╠══════════════════════════════════════════════════════╣${N}"
+echo -e "  ${C}║${N}                                                      ${C}║${N}"
+echo -e "  ${C}║${N}   ${BR}⚠  Save your credentials! They won't show again.${N}  ${C}║${N}"
+echo -e "  ${C}║${N}                                                      ${C}║${N}"
+echo -e "  ${C}╠══════════════════════════════════════════════════════╣${N}"
+echo -e "  ${C}║${N}                                                      ${C}║${N}"
+echo -e "  ${C}║${N}   ${D}Commands:${N}  selfray {start|stop|restart|log}       ${C}║${N}"
+echo -e "  ${C}║${N}   ${D}Password:${N}  selfray reset-password                 ${C}║${N}"
+echo -e "  ${C}║${N}   ${D}Update:${N}    selfray update                         ${C}║${N}"
+echo -e "  ${C}║${N}   ${D}Telegram:${N}  ${BC}t.me/selfcode_dev${N}                     ${C}║${N}"
+echo -e "  ${C}║${N}                                                      ${C}║${N}"
+echo -e "  ${C}╚══════════════════════════════════════════════════════╝${N}"
 echo ""
-echo -e "${C}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${N}"
+echo -e "  ${D}─── Copy-friendly credentials ───${N}"
 echo ""
-echo -e "  ${D}Panel URL${N}    ${B}${C}${PANEL_URL}${N}"
-echo -e "  ${D}Login${N}        ${B}${Y}admin${N}"
-echo -e "  ${D}Password${N}     ${B}${Y}${ADMIN_PASS:-check: selfray creds}${N}"
-echo ""
-echo -e "${C}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${N}"
-echo ""
-echo -e "  ${R}⚠  Save your credentials! They won't show again.${N}"
-echo ""
-echo -e "  ${D}Copy-friendly block below:${N}"
-echo ""
-echo "  ──────────────────────────────────────"
 echo "  URL:       ${PANEL_URL}"
 echo "  Login:     admin"
 echo "  Password:  ${ADMIN_PASS:-selfray creds}"
-echo "  ──────────────────────────────────────"
-echo ""
-echo -e "  ${D}Management:${N}  selfray {start|stop|restart|status|log}"
-echo -e "  ${D}Credentials:${N} selfray creds"
-echo -e "  ${D}Update:${N}      selfray update"
-echo -e "  ${D}Telegram:${N}    ${C}t.me/selfcode_dev${N}"
-echo ""
-echo -e "${G}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${N}"
 echo ""
