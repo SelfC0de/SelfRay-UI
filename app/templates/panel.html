@@ -135,9 +135,12 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 
 <!-- INBOUNDS -->
 <div id="tab-inbounds" class="tc">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:6px">
         <h3 style="background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;font-size:16px">Inbound List</h3>
-        <button class="btn btn-p" onclick="showAddIb()">+ New Inbound</button>
+        <div class="bg">
+            <button class="btn btn-p" onclick="showAddIb()">+ New Inbound</button>
+            <button class="btn btn-o" onclick="autoGenerate()">⚡ Auto-Generate 10</button>
+        </div>
     </div>
     <div id="ib-list"></div>
 </div>
@@ -162,6 +165,16 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
             <label class="cb"><input type="checkbox" id="s-bt" checked> Block BitTorrent</label>
             <label class="cb"><input type="checkbox" id="s-suben" checked> Enable Subscriptions</label>
         </div>
+        <div class="fr">
+            <div class="fg"><label>Fake Website Mode</label>
+                <select id="s-fake-mode">
+                    <option value="off">Off — redirect to login</option>
+                    <option value="fixed">Fixed — one random page per restart</option>
+                    <option value="random" selected>Random — different page each visit</option>
+                </select>
+            </div>
+        </div>
+        <p style="font-size:10px;color:var(--muted);margin:-4px 0 8px">When enabled, unauthenticated visitors see a fake server page (nginx/Apache/IIS/etc). Access panel via <code>/login</code></p>
         <div class="fg"><label>Custom DNS (JSON)</label><textarea id="s-dns" placeholder='{"servers":["1.1.1.1","8.8.8.8"]}'></textarea></div>
         <div class="fg"><label>Custom Routing Rules (JSON array)</label><textarea id="s-rr" placeholder='[{"type":"field","domain":["geosite:category-ads"],"outboundTag":"blocked"}]'></textarea></div>
         <button class="btn btn-p" onclick="saveSets()">Save Settings</button>
@@ -568,6 +581,12 @@ async function showConfig(){const c=await api('/api/xray/config');document.getEl
 
 function fmtB(b){if(!b||b===0)return '0 B';const u=['B','KB','MB','GB','TB'];let i=0;let v=b;while(v>=1024&&i<u.length-1){v/=1024;i++}return v.toFixed(i>0?1:0)+' '+u[i]}
 function toGB(val,unit){if(!val)return 0;if(unit==='MB')return val/1024;if(unit==='TB')return val*1024;return val}
+async function autoGenerate(){
+    if(!confirm('Generate 10 random inbounds? (different protocols, ports, transports)\nExisting inbounds will NOT be deleted.'))return;
+    toast('Generating 10 inbounds...','info');
+    const r=await api('/api/inbounds/auto-generate',{method:'POST'});
+    if(r&&r.success){toast(r.generated+'/'+r.total+' inbounds created','ok');loadIb()}else toast(r&&r.error||'Failed','err');
+}
 async function loadIb(){
     const data=await api('/api/inbounds');if(!data)return;
     document.getElementById('xr-ib').textContent=data.length;
@@ -796,6 +815,7 @@ async function loadSets(){
     document.getElementById('s-path').value=s.panel_path;document.getElementById('s-api').value=s.xray_api_port;
     document.getElementById('s-log').value=s.xray_log_level;document.getElementById('s-sub').value=s.sub_path;
     document.getElementById('s-bt').checked=s.block_bittorrent;document.getElementById('s-suben').checked=s.sub_enable;
+    document.getElementById('s-fake-mode').value=s.fake_site_mode||'random';
     document.getElementById('s-dns').value=s.custom_dns;document.getElementById('s-rr').value=s.custom_routing_rules;
     try{const wl=await api('/api/whitelist');if(wl)document.getElementById('wl-count').textContent='('+wl.count+' domains available)'}catch(e){}
 }
@@ -805,6 +825,7 @@ async function saveSets(){
         panel_path:document.getElementById('s-path').value,xray_api_port:+document.getElementById('s-api').value,
         xray_log_level:document.getElementById('s-log').value,sub_path:document.getElementById('s-sub').value,
         block_bittorrent:document.getElementById('s-bt').checked,sub_enable:document.getElementById('s-suben').checked,
+        fake_site_mode:document.getElementById('s-fake-mode').value,
         custom_dns:document.getElementById('s-dns').value,custom_routing_rules:document.getElementById('s-rr').value,
     })});toast(r.success?'Settings saved':'Error',r.success?'ok':'err');
 }

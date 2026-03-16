@@ -497,10 +497,50 @@ def get_current_user(request: Request):
 #  AUTH ROUTES
 # ═══════════════════════════════════════════
 
+FAKE_SITES = [
+    ("Apache2 Default", "<!DOCTYPE html><html><body><h1>It works!</h1><p>This is the default web page for this server.</p><p>The web server software is running but no content has been added, yet.</p></body></html>"),
+    ("nginx Welcome", "<!DOCTYPE html><html><head><title>Welcome to nginx!</title></head><body><center><h1>Welcome to nginx!</h1></center><hr><center>nginx/1.24.0 (Ubuntu)</center></body></html>"),
+    ("IIS Default", '<!DOCTYPE html><html><head><title>IIS Windows Server</title></head><body style="font-family:Segoe UI,Arial;margin:40px"><h1 style="color:#00599c">Internet Information Services</h1><p>Windows Server</p><hr style="color:#ccc"></body></html>'),
+    ("403 Forbidden", "<!DOCTYPE html><html><head><title>403 Forbidden</title></head><body><center><h1>403 Forbidden</h1></center><hr><center>nginx</center></body></html>"),
+    ("404 Not Found", "<!DOCTYPE html><html><head><title>404 Not Found</title></head><body><center><h1>404 Not Found</h1></center><hr><center>nginx/1.24.0</center></body></html>"),
+    ("503 Unavailable", "<!DOCTYPE html><html><head><title>503 Service Temporarily Unavailable</title></head><body><center><h1>503 Service Temporarily Unavailable</h1></center><hr><center>nginx/1.24.0</center></body></html>"),
+    ("502 Bad Gateway", "<!DOCTYPE html><html><head><title>502 Bad Gateway</title></head><body><center><h1>502 Bad Gateway</h1></center><hr><center>cloudflare</center></body></html>"),
+    ("Blank", "<!DOCTYPE html><html><head><title></title></head><body></body></html>"),
+    ("Under Construction", '<!DOCTYPE html><html><head><title>Site Under Construction</title><meta charset="utf-8"></head><body style="font-family:Arial,sans-serif;text-align:center;padding:80px;background:#fafafa"><div style="max-width:500px;margin:0 auto"><h1 style="font-size:48px;margin-bottom:8px">🚧</h1><h2 style="color:#333">Under Construction</h2><p style="color:#888">We\'re working on something awesome. Check back soon!</p><div style="margin-top:40px;height:4px;background:#eee;border-radius:2px"><div style="width:65%;height:100%;background:linear-gradient(90deg,#667eea,#764ba2);border-radius:2px"></div></div><p style="color:#aaa;font-size:12px;margin-top:8px">65% complete</p></div></body></html>'),
+    ("Coming Soon", '<!DOCTYPE html><html><head><title>Coming Soon</title><meta charset="utf-8"></head><body style="font-family:Helvetica,Arial;text-align:center;padding:100px 20px;background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);color:#fff;min-height:100vh;margin:0;box-sizing:border-box"><h1 style="font-size:42px;font-weight:300;letter-spacing:4px">COMING SOON</h1><p style="color:rgba(255,255,255,.6);font-size:16px;max-width:400px;margin:20px auto">Something amazing is being built. Stay tuned.</p><div style="margin-top:40px;display:flex;justify-content:center;gap:20px"><div style="text-align:center"><div style="font-size:32px;font-weight:700" id="d">12</div><div style="font-size:11px;color:rgba(255,255,255,.4)">DAYS</div></div><div style="text-align:center"><div style="font-size:32px;font-weight:700">08</div><div style="font-size:11px;color:rgba(255,255,255,.4)">HOURS</div></div><div style="text-align:center"><div style="font-size:32px;font-weight:700">45</div><div style="font-size:11px;color:rgba(255,255,255,.4)">MINUTES</div></div></div></body></html>'),
+    ("Plesk Default", '<!DOCTYPE html><html><head><title>Default Web Page</title><meta charset="utf-8"></head><body style="font-family:Open Sans,Arial;background:#f7f7f7;margin:0;padding:40px"><div style="max-width:800px;margin:0 auto;background:#fff;padding:40px;border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,.1)"><h1 style="color:#333;border-bottom:1px solid #eee;padding-bottom:15px">Default Web Page</h1><p style="color:#666;line-height:1.6">This page is used to test the proper operation of the server after installation. If you can read this page, it means that the web server installed at this site is working properly.</p><h2 style="color:#555;margin-top:30px">For administrators</h2><p style="color:#666;line-height:1.6">You should add your website content to the web root directory. If you see this page instead of the site you expected, contact the server administrator.</p></div></body></html>'),
+    ("cPanel Default", '<!DOCTYPE html><html><head><title>cPanel - Default Web Page</title></head><body style="font-family:Verdana;background:#eef1f6;margin:0;padding:40px"><div style="max-width:700px;margin:0 auto;background:#fff;padding:30px;border-top:4px solid #ff6c2c"><h1 style="color:#ff6c2c;font-size:22px">Great Success!</h1><p style="color:#555">The cPanel server is configured and working. This is the default page.</p><p style="color:#999;font-size:13px">If this is your website, log into your cPanel to begin.</p></div></body></html>'),
+    ("WordPress Maintenance", '<!DOCTYPE html><html><head><title>Maintenance</title><meta charset="utf-8"></head><body style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;text-align:center;padding:100px 20px;background:#f0f0f0"><h1 style="font-size:28px;color:#23282d">Briefly unavailable for scheduled maintenance. Check back in a minute.</h1></body></html>'),
+    ("Cloudflare Error", '<!DOCTYPE html><html><head><title>Attention Required! | Cloudflare</title></head><body style="font-family:sans-serif;text-align:center;padding:50px;background:#f8f8f8"><div style="max-width:600px;margin:0 auto"><h1 style="font-size:100px;color:#cf4a31;margin:0">⚠️</h1><h2 style="color:#333">Attention Required!</h2><p style="color:#666">This website is using a security service to protect itself from online attacks.</p><p style="color:#999;font-size:13px">Cloudflare Ray ID: '+secrets.token_hex(8)+'</p></div></body></html>'),
+    ("DirectAdmin", '<!DOCTYPE html><html><head><title>DirectAdmin - Web Control Panel</title></head><body style="font-family:Tahoma;background:#e8ecf1;margin:0;padding:60px 20px"><div style="max-width:600px;margin:0 auto;text-align:center"><h1 style="color:#39455e;font-size:24px">Server Default Page</h1><p style="color:#778;line-height:1.8">If you are seeing this page, the web server is installed and working properly but has no content yet.</p><p style="color:#99a;font-size:12px;margin-top:30px">Powered by DirectAdmin</p></div></body></html>'),
+    ("Parking Page", '<!DOCTYPE html><html><head><title>Domain Parking</title><meta charset="utf-8"></head><body style="font-family:Arial;text-align:center;padding:80px 20px;background:#fff"><h1 style="color:#222;font-weight:400;font-size:26px">This domain is parked</h1><p style="color:#999;max-width:500px;margin:15px auto">This domain has been registered and is currently not associated with any website. If you are the owner, please configure your hosting.</p><hr style="border:none;border-top:1px solid #eee;margin:40px auto;max-width:200px"><p style="color:#ccc;font-size:11px">Domain parking by registrar</p></body></html>'),
+    ("GitLab Maintenance", '<!DOCTYPE html><html><head><title>Deploy in progress</title></head><body style="font-family:Source Sans Pro,sans-serif;text-align:center;padding:100px 20px;background:#292961;color:#fff;margin:0"><div style="max-width:500px;margin:0 auto"><h1 style="font-weight:400;font-size:28px">Deploy in progress</h1><p style="color:rgba(255,255,255,.6)">This GitLab instance is being updated. It will be back shortly.</p></div></body></html>'),
+    ("Heroku No App", '<!DOCTYPE html><html><head><title>Heroku | No such app</title></head><body style="font-family:sans-serif;text-align:center;padding:80px;background:#f5f5f5"><h1 style="color:#5e514d">There is no app configured at this address.</h1><p style="color:#999">If you are the application owner, check your logs for details.</p></body></html>'),
+    ("Caddy Default", '<!DOCTYPE html><html><head><title>Caddy - Default Page</title></head><body style="font-family:system-ui;text-align:center;padding:60px;background:#fff"><h1 style="color:#00727a;font-weight:500">Caddy is running!</h1><p style="color:#777;max-width:450px;margin:10px auto">This page was delivered by <strong>Caddy</strong> web server. Replace this page with your own content.</p></body></html>'),
+    ("LiteSpeed Default", '<!DOCTYPE html><html><head><title>LiteSpeed Web Server</title></head><body style="font-family:Lucida Grande,Arial;text-align:center;padding:80px;background:#fafafa"><h1 style="color:#222;font-size:30px">LiteSpeed Web Server</h1><p style="color:#888">Your server is up and running.</p><p style="color:#bbb;font-size:12px;margin-top:40px">LiteSpeed Technologies</p></body></html>'),
+]
+
+_fake_page = None
+
+def _get_fake_page():
+    global _fake_page
+    mode = get_setting("fake_site_mode", "random")
+    if mode == "off":
+        return None
+    if mode == "fixed" and _fake_page is not None:
+        return _fake_page
+    _fake_page = _rnd.choice(FAKE_SITES)
+    return _fake_page
+
+
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
     if request.session.get("user"):
         return RedirectResponse("/panel", status_code=302)
+    fake = _get_fake_page()
+    if fake:
+        _, html = fake
+        return HTMLResponse(html)
     return RedirectResponse("/login", status_code=302)
 
 
@@ -673,6 +713,7 @@ async def api_get_settings(user: str = Depends(get_current_user)):
         "warp_mode": get_setting("warp_mode", "off"),
         "warp_license_key": get_setting("warp_license_key", ""),
         "warp_domains": get_setting("warp_domains", "geosite:openai, geosite:netflix, geosite:google, geosite:spotify, chatgpt.com, disney.com"),
+        "fake_site_mode": get_setting("fake_site_mode", "random"),
     }
 
 
@@ -693,6 +734,7 @@ class SettingsUpdate(BaseModel):
     tg_notify_login: Optional[bool] = None
     tg_notify_expiry: Optional[bool] = None
     tg_notify_traffic: Optional[bool] = None
+    fake_site_mode: Optional[str] = None
 
 
 @app.post("/api/settings")
@@ -719,6 +761,10 @@ async def api_update_settings(data: SettingsUpdate, user: str = Depends(get_curr
         v = getattr(data, k, None)
         if v is not None:
             set_setting(k, "true" if v else "false")
+    if data.fake_site_mode is not None:
+        set_setting("fake_site_mode", data.fake_site_mode)
+        global _fake_page
+        _fake_page = None
     return {"success": True, "note": "Restart xray to apply xray-related changes"}
 
 
@@ -1040,6 +1086,118 @@ async def api_create_inbound(data: InboundCreate, user: str = Depends(get_curren
     if not result.get("success"):
         raise HTTPException(400, result.get("error", "Failed"))
     return result
+
+
+import random as _rnd
+
+AUTOGEN_CONFIGS = [
+    {"protocol": "vless", "network": "tcp", "security": "reality", "flow": "xtls-rprx-vision"},
+    {"protocol": "vless", "network": "ws", "security": "reality", "flow": ""},
+    {"protocol": "vless", "network": "grpc", "security": "reality", "flow": ""},
+    {"protocol": "vless", "network": "xhttp", "security": "reality", "flow": ""},
+    {"protocol": "vless", "network": "tcp", "security": "reality", "flow": "xtls-rprx-vision"},
+    {"protocol": "vmess", "network": "ws", "security": "none", "flow": ""},
+    {"protocol": "vmess", "network": "tcp", "security": "none", "flow": ""},
+    {"protocol": "trojan", "network": "ws", "security": "tls", "flow": ""},
+    {"protocol": "vless", "network": "httpupgrade", "security": "reality", "flow": ""},
+    {"protocol": "shadowsocks", "network": "tcp", "security": "none", "flow": ""},
+]
+
+REALITY_DESTS = [
+    "google.com:443", "microsoft.com:443", "apple.com:443",
+    "cloudflare.com:443", "yahoo.com:443", "mozilla.org:443",
+    "www.samsung.com:443", "www.cisco.com:443", "www.oracle.com:443",
+    "www.tesla.com:443", "github.com:443", "www.wikipedia.org:443",
+]
+
+UTLS_FPS = ["chrome", "firefox", "safari", "edge", "random", "randomized"]
+
+
+def _load_whitelist_domains():
+    wl_file = APP_DIR / "static" / "whitelist-ru.txt"
+    if not wl_file.exists():
+        return REALITY_DESTS
+    try:
+        lines = wl_file.read_text().strip().split("\n")
+        domains = [l.strip() for l in lines if l.strip() and not l.startswith("#")]
+        good = [d for d in domains if "." in d and " " not in d and len(d) < 100]
+        return good if good else REALITY_DESTS
+    except:
+        return REALITY_DESTS
+
+
+@app.post("/api/inbounds/auto-generate")
+async def api_auto_generate(user: str = Depends(get_current_user)):
+    if not XRAY_BIN.exists():
+        return {"success": False, "error": "Install Xray first"}
+
+    wl_domains = _load_whitelist_domains()
+    dest_pool = [d + ":443" if ":" not in d else d for d in wl_domains] if wl_domains != REALITY_DESTS else REALITY_DESTS
+    used_ports = set()
+    conn = get_db()
+    existing = conn.execute("SELECT port FROM inbounds").fetchall()
+    conn.close()
+    for r in existing:
+        used_ports.add(r["port"])
+
+    results = []
+    configs = list(AUTOGEN_CONFIGS)
+    _rnd.shuffle(configs)
+
+    fixed_ports = [443, 8443]
+    for cfg in configs[:10]:
+        if fixed_ports:
+            port = fixed_ports.pop(0)
+            if port in used_ports:
+                port = None
+        else:
+            port = None
+        if port is None:
+            for _ in range(100):
+                port = _rnd.randint(10000, 60000)
+                if port not in used_ports:
+                    break
+        used_ports.add(port)
+
+        kwargs = {
+            "protocol": cfg["protocol"],
+            "port": port,
+            "network": cfg["network"],
+            "security": cfg["security"],
+            "flow": cfg["flow"],
+            "client_name": "auto-user",
+            "remark": f"auto-{cfg['protocol']}-{cfg['network']}-{port}",
+        }
+
+        if cfg["security"] == "reality":
+            dest_domain = _rnd.choice(dest_pool)
+            sni = dest_domain.split(":")[0]
+            kwargs["reality_dest"] = dest_domain
+            kwargs["reality_server_names"] = sni
+            kwargs["reality_fingerprint"] = _rnd.choice(UTLS_FPS)
+        elif cfg["protocol"] == "shadowsocks":
+            kwargs["ss_method"] = "chacha20-ietf-poly1305"
+            kwargs["ss_password"] = secrets.token_urlsafe(16)
+
+        if cfg["network"] == "ws":
+            kwargs["ws_path"] = "/" + secrets.token_hex(4)
+            if _rnd.random() > 0.5 and dest_pool:
+                kwargs["ws_host"] = _rnd.choice(dest_pool).split(":")[0]
+        elif cfg["network"] == "grpc":
+            kwargs["grpc_service_name"] = secrets.token_hex(4)
+        elif cfg["network"] == "httpupgrade":
+            kwargs["httpupgrade_path"] = "/" + secrets.token_hex(4)
+        elif cfg["network"] == "xhttp":
+            kwargs["xhttp_path"] = "/" + secrets.token_hex(4)
+
+        try:
+            r = core_create_inbound(**kwargs)
+            results.append({"port": port, "success": r.get("success", False), "id": r.get("id"), "error": r.get("error")})
+        except Exception as e:
+            results.append({"port": port, "success": False, "error": str(e)})
+
+    ok = sum(1 for r in results if r["success"])
+    return {"success": True, "generated": ok, "total": len(results), "details": results}
 
 
 class InboundUpdate(BaseModel):
