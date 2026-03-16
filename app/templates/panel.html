@@ -556,7 +556,7 @@ document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
     if(t.dataset.tab==='inbounds')loadIb();if(t.dataset.tab==='settings')loadSets();
 }));
 
-let serverIP='',onlineUsers=[];
+let serverIP='',realIP='',onlineUsers=[];
 async function loadSt(){
     try{
         const s=await api('/api/status');
@@ -565,6 +565,7 @@ async function loadSt(){
             el.innerHTML=s.xray_running?'<span class="dot dot-g"></span>Running ('+s.pid+')':'<span class="dot dot-r"></span>Stopped';
             document.getElementById('xr-up').textContent=fmtUp(s.uptime);
             if(s.server_ip)serverIP=s.server_ip;
+            if(s.real_ip)realIP=s.real_ip;
             onlineUsers=s.online_users||[];
             const oc=s.online_count||0;
             const oel=document.getElementById('xr-online');
@@ -650,7 +651,7 @@ function showAddIb(){
     document.getElementById('ib-proto').disabled=false;
     document.getElementById('presets-area').style.display='';
     document.getElementById('m-add-ib').classList.add('show');
-    if(serverIP)document.getElementById('ib-listen').value=serverIP;
+    if(realIP)document.getElementById('ib-listen').value=realIP;
     ibProtoChange();
 }
 function getIbBody(){

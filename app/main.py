@@ -615,6 +615,7 @@ async def api_status(request: Request, user: str = Depends(get_current_user)):
         server_ip = _get_server_ip(request)
     except:
         server_ip = ""
+    real_ip = _get_real_ip()
     online = _xray_api_online() if is_xray_running() else []
     return {
         "xray_running": is_xray_running(),
@@ -622,6 +623,7 @@ async def api_status(request: Request, user: str = Depends(get_current_user)):
         "pid": xray_process.pid if is_xray_running() else None,
         "uptime": uptime,
         "server_ip": server_ip,
+        "real_ip": real_ip,
         "online_users": online,
         "online_count": len(online)
     }
