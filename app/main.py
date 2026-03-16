@@ -222,10 +222,11 @@ def generate_xray_config():
 
     config = {
         "log": {"loglevel": log_level},
-        "api": {"tag": "api", "services": ["StatsService"]},
+        "api": {"tag": "api", "services": ["StatsService", "HandlerService"]},
         "stats": {},
         "policy": {
-            "system": {"statsInboundUplink": True, "statsInboundDownlink": True}
+            "levels": {"0": {"statsUserUplink": True, "statsUserDownlink": True}},
+            "system": {"statsInboundUplink": True, "statsInboundDownlink": True, "statsOutboundUplink": True, "statsOutboundDownlink": True}
         },
         "inbounds": [
             {
@@ -353,11 +354,101 @@ async def _auto_disable_loop():
     while True:
         try:
             await asyncio.sleep(60)
+            _sync_traffic_from_xray()
             _check_and_disable_clients()
         except asyncio.CancelledError:
             break
         except Exception as e:
             logger.error(f"Auto-disable error: {e}")
+
+
+def _xray_api_stats(pattern="", reset=True):
+    api_port = int(get_setting("xray_api_port", "10085"))
+    try:
+        cmd = [str(XRAY_BIN), "api", "stats", f"--server=127.0.0.1:{api_port}"]
+        if pattern:
+            cmd.extend(["-pattern", pattern])
+        if reset:
+            cmd.append("-reset")
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        if r.returncode != 0:
+            return {}
+        result = {}
+        current_name = ""
+        for line in r.stdout.strip().split("\n"):
+            line = line.strip()
+            if line.startswith("stat: <"):
+                continue
+            if line.startswith("name:"):
+                current_name = line.split('"')[1] if '"' in line else ""
+            elif line.startswith("value:") and current_name:
+                try:
+                    val = int(line.split(":")[1].strip())
+                    result[current_name] = val
+                except:
+                    pass
+                current_name = ""
+        return result
+    except Exception as e:
+        logger.debug(f"Xray stats error: {e}")
+        return {}
+
+
+def _xray_api_online():
+    api_port = int(get_setting("xray_api_port", "10085"))
+    try:
+        r = subprocess.run(
+            [str(XRAY_BIN), "api", "stats", f"--server=127.0.0.1:{api_port}", "-pattern", "user>>>", "-reset=false"],
+            capture_output=True, text=True, timeout=10
+        )
+        if r.returncode != 0:
+            return []
+        online = set()
+        current_name = ""
+        for line in r.stdout.strip().split("\n"):
+            line = line.strip()
+            if line.startswith("name:") and "user>>>" in line and ">>>traffic>>>" in line:
+                parts = line.split(">>>")
+                if len(parts) >= 2:
+                    email = parts[1]
+                    online.add(email)
+        return list(online)
+    except:
+        return []
+
+
+def _sync_traffic_from_xray():
+    if not is_xray_running():
+        return
+    stats = _xray_api_stats("user>>>", reset=True)
+    if not stats:
+        return
+    traffic = {}
+    for name, value in stats.items():
+        parts = name.split(">>>")
+        if len(parts) == 4 and parts[0] == "user" and parts[2] == "traffic":
+            email = parts[1]
+            direction = parts[3]
+            if email not in traffic:
+                traffic[email] = {"up": 0, "down": 0}
+            if direction == "uplink":
+                traffic[email]["up"] = value
+            elif direction == "downlink":
+                traffic[email]["down"] = value
+    if not traffic:
+        return
+    try:
+        conn = get_db()
+        for email, data in traffic.items():
+            if data["up"] > 0 or data["down"] > 0:
+                conn.execute(
+                    "UPDATE clients SET upload=upload+?, download=download+? WHERE email=?",
+                    (data["up"], data["down"], email)
+                )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Traffic sync error: {e}")
 
 
 def _check_and_disable_clients():
@@ -473,12 +564,15 @@ async def api_status(request: Request, user: str = Depends(get_current_user)):
         server_ip = _get_server_ip(request)
     except:
         server_ip = ""
+    online = _xray_api_online() if is_xray_running() else []
     return {
         "xray_running": is_xray_running(),
         "xray_installed": XRAY_BIN.exists(),
         "pid": xray_process.pid if is_xray_running() else None,
         "uptime": uptime,
-        "server_ip": server_ip
+        "server_ip": server_ip,
+        "online_users": online,
+        "online_count": len(online)
     }
 
 
@@ -802,7 +896,6 @@ class InboundCreate(BaseModel):
     tls_key_file: str = ""
     tls_alpn: str = "h2,http/1.1"
     tls_fingerprint: str = "chrome"
-    tls_allow_insecure: bool = False
     # Reality
     reality_dest: str = "google.com:443"
     reality_server_names: str = "google.com"
@@ -1148,8 +1241,7 @@ def _build_stream_settings(data: InboundCreate) -> dict:
         tls = {
             "serverName": data.tls_server_name,
             "alpn": [a.strip() for a in data.tls_alpn.split(",") if a.strip()],
-            "fingerprint": data.tls_fingerprint,
-            "allowInsecure": data.tls_allow_insecure
+            "fingerprint": data.tls_fingerprint
         }
         if data.tls_cert_file and data.tls_key_file:
             tls["certificates"] = [{"certificateFile": data.tls_cert_file, "keyFile": data.tls_key_file}]

@@ -119,6 +119,7 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
         <div class="si"><div class="lb">Xray Version</div><div class="vl" id="xr-ver">—</div></div>
         <div class="si"><div class="lb">Uptime</div><div class="vl" id="xr-up">—</div></div>
         <div class="si"><div class="lb">Inbounds</div><div class="vl" id="xr-ib">—</div></div>
+        <div class="si"><div class="lb">Online</div><div class="vl" id="xr-online">—</div></div>
     </div>
     <div class="card">
         <h3>Xray Control</h3>
@@ -400,8 +401,8 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
         </div>
         <div class="fr">
             <div class="fg"><label>ALPN</label><input type="text" id="ib-tls-alpn" value="h2,http/1.1"></div>
-            <div class="fg"><label class="cb" style="margin-top:16px"><input type="checkbox" id="ib-tls-insec"> Allow Insecure</label></div>
         </div>
+        <p style="font-size:10px;color:#e74c3c;margin:4px 0">⚠ allowInsecure removed — deprecated in Xray v26.2.6, disabled after June 2026. Use valid certificates.</p>
         <div class="fr">
             <div class="fg"><label>Certificate File Path</label><input type="text" id="ib-tls-cert" placeholder="/path/to/fullchain.pem"></div>
             <div class="fg"><label>Key File Path</label><input type="text" id="ib-tls-key" placeholder="/path/to/privkey.pem"></div>
@@ -538,7 +539,7 @@ document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
     if(t.dataset.tab==='inbounds')loadIb();if(t.dataset.tab==='settings')loadSets();
 }));
 
-let serverIP='';
+let serverIP='',onlineUsers=[];
 async function loadSt(){
     try{
         const s=await api('/api/status');
@@ -547,6 +548,10 @@ async function loadSt(){
             el.innerHTML=s.xray_running?'<span class="dot dot-g"></span>Running ('+s.pid+')':'<span class="dot dot-r"></span>Stopped';
             document.getElementById('xr-up').textContent=fmtUp(s.uptime);
             if(s.server_ip)serverIP=s.server_ip;
+            onlineUsers=s.online_users||[];
+            const oc=s.online_count||0;
+            const oel=document.getElementById('xr-online');
+            oel.innerHTML=oc>0?'<span style="color:#2ecc71;font-weight:600">'+oc+'</span>':'0';
         }
     }catch(e){console.error('Status load error:',e)}
     try{
@@ -591,8 +596,10 @@ async function loadIb(){
                     tf+='<div style="background:'+clr+';height:100%;border-radius:3px;width:'+pct.toFixed(1)+'%;transition:width .3s"></div></div>';
                     tf+='<div style="font-size:10px;color:var(--muted);margin-top:2px">Осталось: '+fmtB(left)+' ('+pct.toFixed(0)+'%)</div>';
                 }else tf='<span style="font-size:11px;color:var(--muted)">↑'+fmtB(c.upload||0)+' ↓'+fmtB(c.download||0)+' / ∞</span>';
+                const isOn=onlineUsers.includes(c.email);
                 h+='<tr><td>'+c.email+'</td><td style="font-family:monospace;font-size:11px" title="'+c.uuid+'">'+c.uuid.substring(0,12)+'...</td>';
-                h+='<td>'+(c.flow||'—')+'</td><td>'+tf+'</td><td><span class="badge '+(c.enabled?'b-on':'b-off')+'">'+(c.enabled?'ON':'OFF')+'</span></td>';
+                h+='<td>'+(c.flow||'—')+'</td><td>'+tf+'</td>';
+                h+='<td><span class="dot '+(isOn?'dot-g':'dot-r')+'" style="margin-right:4px"></span>'+(isOn?'<span style="color:#2ecc71;font-size:11px">Online</span>':'')+'<span class="badge '+(c.enabled?'b-on':'b-off')+'" style="margin-left:4px">'+(c.enabled?'ON':'OFF')+'</span></td>';
                 h+='<td class="bg"><button class="btn btn-sm btn-p" onclick="showLink(\''+c.id+'\')">Link</button>';
                 h+='<button class="btn btn-sm btn-o" onclick="renameCl(\''+c.id+'\',\''+c.email.replace(/'/g,"\\'")+'\')">Rename</button>';
                 h+='<button class="btn btn-sm btn-o" onclick="copySub(\''+c.id+'\')">Sub</button>';
@@ -632,7 +639,7 @@ function getIbBody(){
         h2_host:document.getElementById('ib-h2-host').value,httpupgrade_path:document.getElementById('ib-hu-path').value,
         httpupgrade_host:document.getElementById('ib-hu-host').value,tls_server_name:document.getElementById('ib-tls-sni').value,
         tls_fingerprint:document.getElementById('ib-tls-fp').value,tls_alpn:document.getElementById('ib-tls-alpn').value,
-        tls_allow_insecure:document.getElementById('ib-tls-insec').checked,tls_cert_file:document.getElementById('ib-tls-cert').value,
+        tls_cert_file:document.getElementById('ib-tls-cert').value,
         tls_key_file:document.getElementById('ib-tls-key').value,reality_dest:document.getElementById('ib-r-dest').value,
         reality_server_names:document.getElementById('ib-r-sni').value,reality_private_key:document.getElementById('ib-r-priv').value,
         reality_public_key:document.getElementById('ib-r-pub').value,reality_short_ids:document.getElementById('ib-r-sid').value,
@@ -682,7 +689,6 @@ async function editIb(id){
     document.getElementById('ib-tls-sni').value=ts.serverName||'';
     document.getElementById('ib-tls-fp').value=ts.fingerprint||'chrome';
     document.getElementById('ib-tls-alpn').value=(ts.alpn||[]).join(',');
-    document.getElementById('ib-tls-insec').checked=!!ts.allowInsecure;
     const ws=st.wsSettings||{};const grpc=st.grpcSettings||{};const h2=st.httpSettings||{};const hu=st.httpupgradeSettings||{};const tcp=st.tcpSettings||{};const xh=st.xhttpSettings||{};
     document.getElementById('ib-ws-path').value=ws.path||'/ws';
     document.getElementById('ib-ws-host').value=(ws.headers||{}).Host||'';
