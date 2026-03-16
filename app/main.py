@@ -1791,13 +1791,33 @@ async def api_backup(user: str = Depends(get_current_user)):
     return {"error": "No database"}
 
 
+WHITELIST_URL = "https://raw.githubusercontent.com/hxehex/russia-mobile-internet-whitelist/main/whitelist.txt"
+
+
 @app.get("/api/whitelist")
 async def api_get_whitelist(user: str = Depends(get_current_user)):
     wl_path = APP_DIR / "static" / "whitelist-ru.txt"
     if wl_path.exists():
-        domains = [d.strip() for d in wl_path.read_text().splitlines() if d.strip()]
+        domains = [d.strip() for d in wl_path.read_text().splitlines() if d.strip() and not d.startswith("#")]
         return {"domains": domains, "count": len(domains)}
     return {"domains": [], "count": 0}
+
+
+@app.post("/api/whitelist/update")
+async def api_update_whitelist(user: str = Depends(get_current_user)):
+    wl_path = APP_DIR / "static" / "whitelist-ru.txt"
+    try:
+        import urllib.request
+        req = urllib.request.Request(WHITELIST_URL, headers={"User-Agent": "SelfRay-UI"})
+        resp = urllib.request.urlopen(req, timeout=30)
+        data = resp.read().decode("utf-8", errors="ignore")
+        lines = [l.strip() for l in data.splitlines() if l.strip() and not l.startswith("#")]
+        if len(lines) < 5:
+            return {"success": False, "error": "Downloaded file too small, possibly invalid"}
+        wl_path.write_text("\n".join(lines) + "\n")
+        return {"success": True, "count": len(lines)}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 @app.post("/api/apply-whitelist")

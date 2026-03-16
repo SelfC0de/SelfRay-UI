@@ -209,8 +209,10 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
     </div>
     <div class="card">
         <h3>RU Whitelist Routing</h3>
-        <p style="font-size:11px;color:var(--muted);margin-bottom:8px">Route Russian domains (gosuslugi, sberbank, vk, yandex, avito, ozon, etc.) directly, bypassing VPN. <span id="wl-count"></span></p>
-        <div class="bg">
+        <p style="font-size:11px;color:var(--muted);margin-bottom:4px">Route Russian domains directly, bypassing VPN. <span id="wl-count"></span></p>
+        <p style="font-size:10px;color:var(--muted);margin-bottom:8px">Source: <a href="https://github.com/hxehex/russia-mobile-internet-whitelist" target="_blank" style="color:var(--accent)">hxehex/russia-mobile-internet-whitelist</a></p>
+        <div class="bg" style="flex-wrap:wrap;gap:6px">
+            <button class="btn btn-p" onclick="updateWhitelist()">⬇ Update Whitelist</button>
             <button class="btn btn-s" onclick="applyWhitelist()">Apply RU Whitelist</button>
             <button class="btn btn-o" onclick="viewWhitelist()">View Domains</button>
             <button class="btn btn-d btn-sm" onclick="clearWhitelist()">Remove</button>
@@ -837,6 +839,11 @@ async function backup(){
     const r=await api('/api/backup');if(r.database){
         const a=document.createElement('a');a.href='data:application/octet-stream;base64,'+r.database;
         a.download='selfray-backup-'+new Date().toISOString().slice(0,10)+'.db';a.click();toast('Backup downloaded','ok')}
+}
+async function updateWhitelist(){
+    toast('Downloading whitelist from GitHub...','info');
+    const r=await api('/api/whitelist/update',{method:'POST'});
+    if(r&&r.success){toast('Whitelist updated: '+r.count+' domains','ok');loadSets()}else toast(r&&r.error||'Failed','err');
 }
 async function applyWhitelist(){
     const r=await api('/api/apply-whitelist',{method:'POST'});
