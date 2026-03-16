@@ -1742,28 +1742,55 @@ async def subscription(token: str, request: Request):
     if not client:
         conn.close()
         raise HTTPException(404)
-    ib = conn.execute("SELECT * FROM inbounds WHERE id=?", (client["inbound_id"],)).fetchone()
+    all_clients = conn.execute(
+        "SELECT c.*, i.protocol, i.port, i.listen, i.settings, i.stream_settings, i.remark, i.enabled "
+        "FROM clients c JOIN inbounds i ON c.inbound_id=i.id "
+        "WHERE c.email=? AND c.enabled=1 AND i.enabled=1",
+        (client["email"],)
+    ).fetchall()
     conn.close()
-    if not ib:
-        raise HTTPException(404)
+
     host = request.headers.get("host", "").split(":")[0]
     if not host or host in ("0.0.0.0", "127.0.0.1", "localhost"):
         host = _get_server_ip(request)
-    stream = json.loads(ib["stream_settings"])
-    settings = json.loads(ib["settings"])
-    link = _generate_link(ib["protocol"], dict(client), dict(ib), stream, settings, host)
+
+    links = []
+    for cl in all_clients:
+        try:
+            stream = json.loads(cl["stream_settings"])
+            settings = json.loads(cl["settings"])
+            ib_dict = {"port": cl["port"], "listen": cl["listen"], "remark": cl["remark"], "protocol": cl["protocol"]}
+            cl_dict = {"uuid": cl["uuid"], "email": cl["email"], "flow": cl["flow"] or ""}
+            link = _generate_link(cl["protocol"], cl_dict, ib_dict, stream, settings, host)
+            if link:
+                links.append(link)
+        except:
+            pass
+
+    if not links:
+        raise HTTPException(404, "No active links")
+
+    all_links = "\n".join(links)
 
     ua = (request.headers.get("user-agent", "") or "").lower()
-    is_app = any(x in ua for x in ["v2rayn", "hiddify", "nekobox", "nekoray", "clash", "surge", "shadowrocket", "streisand", "v2rayng", "sing-box", "stash", "quantumult"])
+    is_app = any(x in ua for x in [
+        "v2rayn", "hiddify", "nekobox", "nekoray", "clash", "surge", "shadowrocket",
+        "streisand", "v2rayng", "sing-box", "stash", "quantumult", "happ", "v2box",
+        "foxray", "loon", "karing", "surfboard", "mihomo",
+    ]) or "mozilla" not in ua
+
     if is_app:
         sub_name = get_setting("sub_profile_title", "SelfRay-UI")
+        total_up = sum(c["upload"] or 0 for c in all_clients)
+        total_down = sum(c["download"] or 0 for c in all_clients)
+        total_limit = max((c["traffic_limit"] or 0) for c in all_clients)
         headers = {
             "content-disposition": f'attachment; filename="{client["email"]}"',
             "profile-title": base64.b64encode(sub_name.encode()).decode(),
-            "subscription-userinfo": f'upload={client["upload"] or 0}; download={client["download"] or 0}; total={client["traffic_limit"] or 0}',
+            "subscription-userinfo": f"upload={total_up}; download={total_down}; total={total_limit}",
             "profile-update-interval": "12",
         }
-        return Response(content=base64.b64encode(link.encode()).decode(), media_type="text/plain", headers=headers)
+        return Response(content=base64.b64encode(all_links.encode()).decode(), media_type="text/plain", headers=headers)
 
     exp_str = "Unlimited"
     if client["expiry_time"] and client["expiry_time"] > 0:
@@ -1774,11 +1801,14 @@ async def subscription(token: str, request: Request):
         traf_str = f"{client['traffic_limit'] / (1024**3):.1f} GB"
     used = ((client["upload"] or 0) + (client["download"] or 0)) / (1024**3)
 
-    return HTMLResponse(_sub_page_html(client["email"], link, ib["protocol"].upper(), exp_str, traf_str, f"{used:.2f} GB", token, host))
+    return HTMLResponse(_sub_page_html(client["email"], links[0], client.get("protocol", "VLESS"), exp_str, traf_str, f"{used:.2f} GB", token, host, len(links)))
 
 
-def _sub_page_html(name, link, proto, expiry, limit, used, token, host):
-    sub_url = f"http://{host}/sub/{token}"
+def _sub_page_html(name, link, proto, expiry, limit, used, token, host, total_links=1):
+    panel_port = get_setting("panel_port", "8443")
+    ssl_on = get_setting("ssl_enabled", "false") == "true"
+    scheme = "https" if ssl_on else "http"
+    sub_url = f"{scheme}://{host}:{panel_port}/sub/{token}"
     js_link = link.replace("\\", "\\\\").replace('"', '\\"').replace("'", "\\'")
     js_sub = sub_url.replace("\\", "\\\\").replace('"', '\\"').replace("'", "\\'")
     return f'''<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
