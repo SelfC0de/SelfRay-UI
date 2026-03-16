@@ -632,6 +632,10 @@ def _get_server_ip(request: Request = None):
         host = request.headers.get("host", "").split(":")[0]
         if host and host not in ("0.0.0.0", "127.0.0.1", "localhost"):
             return host
+    return _get_real_ip()
+
+
+def _get_real_ip():
     try:
         import socket
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -641,7 +645,15 @@ def _get_server_ip(request: Request = None):
         s.close()
         return ip
     except:
-        return ""
+        pass
+    try:
+        r = subprocess.run(["curl", "-s4", "--max-time", "5", "ifconfig.me"],
+                           capture_output=True, text=True, timeout=10)
+        if r.returncode == 0 and r.stdout.strip():
+            return r.stdout.strip()
+    except:
+        pass
+    return ""
 
 
 # ═══════════════════════════════════════════
@@ -1180,18 +1192,11 @@ async def api_delete_auto_inbounds(user: str = Depends(get_current_user)):
 
 
 @app.post("/api/inbounds/auto-generate")
-async def api_auto_generate(request: Request, user: str = Depends(get_current_user)):
+async def api_auto_generate(user: str = Depends(get_current_user)):
     if not XRAY_BIN.exists():
         return {"success": False, "error": "Install Xray first"}
 
-    server_ip = _get_server_ip(request)
-    if not server_ip or server_ip in ("0.0.0.0", "127.0.0.1", "localhost"):
-        try:
-            r = subprocess.run(["curl", "-s4", "--max-time", "5", "ifconfig.me"],
-                               capture_output=True, text=True, timeout=10)
-            server_ip = r.stdout.strip() if r.returncode == 0 else ""
-        except:
-            pass
+    server_ip = _get_real_ip()
     if not server_ip:
         return {"success": False, "error": "Cannot detect server IP"}
 
