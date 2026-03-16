@@ -1011,8 +1011,8 @@ function applyPreset(name){
     const p={
         speed:{proto:'vless',net:'tcp',sec:'reality',flow:'xtls-rprx-vision',port:443,remark:'Speed'},
         stealth:{proto:'vless',net:'xhttp',sec:'reality',flow:'',port:443,remark:'Stealth'},
-        streaming:{proto:'vless',net:'ws',sec:'tls',flow:'',port:443,remark:'Streaming'},
-        gaming:{proto:'vless',net:'grpc',sec:'reality',flow:'',port:443,remark:'Gaming'},
+        streaming:{proto:'vless',net:'grpc',sec:'reality',flow:'',port:443,remark:'Streaming'},
+        gaming:{proto:'vless',net:'tcp',sec:'reality',flow:'xtls-rprx-vision',port:443,remark:'Gaming'},
     };
     const c=p[name];if(!c)return;
     document.getElementById('ib-proto').value=c.proto;
@@ -1021,10 +1021,10 @@ function applyPreset(name){
     document.getElementById('ib-sec').value=c.sec;
     document.getElementById('ib-port').value=c.port;
     document.getElementById('ib-remark').value=c.remark;
+    if(realIP)document.getElementById('ib-listen').value=realIP;
     if(c.flow)document.getElementById('ib-flow').value=c.flow;
     else document.getElementById('ib-flow').value='';
-    if(c.net==='grpc')document.getElementById('ib-grpc-sn').value='game';
-    if(c.net==='ws')document.getElementById('ib-ws-path').value='/stream';
+    if(c.net==='grpc')document.getElementById('ib-grpc-sn').value=name;
     if(c.net==='xhttp'){document.getElementById('ib-xhttp-path').value='/';document.getElementById('ib-xhttp-mode').value='auto'}
     ibProtoChange();ibNetChange();ibSecChange();
     toast('Preset "'+name+'" applied — review & create','info');
