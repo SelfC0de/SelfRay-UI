@@ -1120,11 +1120,11 @@ AUTOGEN_CONFIGS = [
     {"protocol": "vless", "network": "tcp", "security": "reality", "flow": "xtls-rprx-vision"},
     {"protocol": "vless", "network": "grpc", "security": "reality", "flow": ""},
     {"protocol": "vless", "network": "xhttp", "security": "reality", "flow": ""},
-    {"protocol": "vless", "network": "httpupgrade", "security": "reality", "flow": ""},
+    {"protocol": "vless", "network": "grpc", "security": "reality", "flow": ""},
+    {"protocol": "vless", "network": "xhttp", "security": "reality", "flow": ""},
     {"protocol": "vless", "network": "tcp", "security": "reality", "flow": "xtls-rprx-vision"},
     {"protocol": "vmess", "network": "ws", "security": "none", "flow": ""},
     {"protocol": "vmess", "network": "tcp", "security": "none", "flow": ""},
-    {"protocol": "vless", "network": "grpc", "security": "reality", "flow": ""},
     {"protocol": "shadowsocks", "network": "tcp", "security": "none", "flow": ""},
 ]
 

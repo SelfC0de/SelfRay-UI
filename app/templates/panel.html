@@ -747,7 +747,17 @@ function ibNetChange(){
     ['tcp','ws','grpc','h2','hu','xhttp'].forEach(x=>condShow('grp-'+x,false));
     if(n==='tcp')condShow('grp-tcp',true);else if(n==='ws')condShow('grp-ws',true);else if(n==='grpc')condShow('grp-grpc',true);else if(n==='h2')condShow('grp-h2',true);else if(n==='httpupgrade')condShow('grp-hu',true);else if(n==='xhttp')condShow('grp-xhttp',true);
 }
-function ibSecChange(){const s=document.getElementById('ib-sec').value;condShow('grp-tls',s==='tls');condShow('grp-reality',s==='reality')}
+function ibSecChange(){
+    const s=document.getElementById('ib-sec').value;
+    condShow('grp-tls',s==='tls');condShow('grp-reality',s==='reality');
+    if(s==='reality'){
+        const n=document.getElementById('ib-net').value;
+        if(!['tcp','grpc','xhttp'].includes(n)){
+            toast('Reality supports only TCP, gRPC, XHTTP!','err');
+            document.getElementById('ib-net').value='tcp';ibNetChange();
+        }
+    }
+}
 function ibTcpHtChange(){condShow('grp-tcp-http',document.getElementById('ib-tcp-ht').value==='http')}
 
 async function genRealityKeys(){
