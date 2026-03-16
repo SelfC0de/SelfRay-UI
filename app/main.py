@@ -837,7 +837,9 @@ def _get_cert_info():
 
 @app.get("/api/cert/status")
 async def api_cert_status(user: str = Depends(get_current_user)):
-    return _get_cert_info()
+    info = _get_cert_info()
+    info["domain"] = get_setting("ssl_domain", "")
+    return info
 
 
 @app.post("/api/cert/self-signed")
@@ -880,8 +882,6 @@ async def api_cert_acme(request: Request, user: str = Depends(get_current_user))
     email = body.get("email", "").strip()
     if not domain:
         return {"success": False, "error": "Domain is required"}
-    if not email:
-        return {"success": False, "error": "Email is required"}
     r = subprocess.run(["which", "certbot"], capture_output=True, text=True)
     if r.returncode != 0:
         try:
@@ -890,30 +890,35 @@ async def api_cert_acme(request: Request, user: str = Depends(get_current_user))
             return {"success": False, "error": "Failed to install certbot"}
     CERT_DIR.mkdir(parents=True, exist_ok=True)
     try:
-        panel_port = int(get_setting("panel_port", "8443"))
         cmd = [
             "certbot", "certonly", "--standalone",
             "--preferred-challenges", "http",
             "--http-01-port", "80",
-            "-d", domain, "--email", email,
+            "-d", domain,
             "--agree-tos", "--non-interactive",
-            "--cert-path", str(CERT_DIR / "fullchain.pem"),
-            "--key-path", str(CERT_DIR / "privkey.pem"),
+            "--keep-until-expiring",
         ]
+        if email:
+            cmd += ["--email", email]
+        else:
+            cmd += ["--register-unsafely-without-email"]
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         if r.returncode != 0:
-            return {"success": False, "error": r.stderr[-500:] if r.stderr else "certbot failed"}
+            err = (r.stderr or r.stdout or "certbot failed")[-500:]
+            return {"success": False, "error": err}
         le_cert = Path(f"/etc/letsencrypt/live/{domain}/fullchain.pem")
         le_key = Path(f"/etc/letsencrypt/live/{domain}/privkey.pem")
         if le_cert.exists() and le_key.exists():
             import shutil as _sh
             _sh.copy2(str(le_cert), str(CERT_DIR / "fullchain.pem"))
             _sh.copy2(str(le_key), str(CERT_DIR / "privkey.pem"))
+        else:
+            return {"success": False, "error": f"Certificate files not found at {le_cert}"}
         set_setting("ssl_cert_path", str(CERT_DIR / "fullchain.pem"))
         set_setting("ssl_key_path", str(CERT_DIR / "privkey.pem"))
         set_setting("ssl_enabled", "true")
         set_setting("ssl_domain", domain)
-        return {"success": True, "message": f"Let's Encrypt certificate issued for {domain}. Restart panel to apply."}
+        return {"success": True, "message": f"Certificate issued for {domain}. Panel will restart now.", "restart": True}
     except Exception as e:
         return {"success": False, "error": str(e)}
 

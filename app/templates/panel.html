@@ -192,9 +192,10 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
             </div>
         </div>
         <div style="border-top:1px solid rgba(255,255,255,.06);padding-top:10px;margin-bottom:10px">
+            <p style="font-size:11px;color:var(--muted);margin-bottom:8px">Point your domain A-record to this server IP, then click "Issue Let's Encrypt". Port 80 must be free.</p>
             <div class="fr">
-                <div class="fg"><label>Domain (for Let's Encrypt)</label><input type="text" id="cert-domain" placeholder="vpn.example.com"></div>
-                <div class="fg"><label>Email (for Let's Encrypt)</label><input type="email" id="cert-email" placeholder="admin@example.com"></div>
+                <div class="fg"><label>Domain</label><input type="text" id="cert-domain" placeholder="vpn.example.com"></div>
+                <div class="fg"><label>Email (optional)</label><input type="email" id="cert-email" placeholder="admin@example.com"></div>
             </div>
         </div>
         <div class="bg" style="margin-top:8px;flex-wrap:wrap;gap:6px">
@@ -890,12 +891,13 @@ document.getElementById('ib-country').addEventListener('change',function(){docum
 async function loadCertStatus(){
     const r=await api('/api/cert/status');if(!r)return;
     const el=document.getElementById('cert-status');
+    if(r.domain)document.getElementById('cert-domain').value=r.domain;
     if(!r.installed){
         el.innerHTML='<span class="badge b-off">No Certificate</span> <span style="font-size:11px;color:var(--muted)">Panel running on HTTP</span>';
         document.getElementById('cert-paths').style.display='none';
         return;
     }
-    let badge=r.type==='self-signed'?'<span class="badge b-on">Self-Signed</span>':'<span class="badge b-pr">CA-Signed</span>';
+    let badge=r.type==='self-signed'?'<span class="badge b-on">Self-Signed</span>':'<span class="badge b-pr">CA-Signed ✓</span>';
     let info=badge;
     if(r.not_after)info+=' <span style="font-size:11px;color:var(--muted)">Expires: '+r.not_after+'</span>';
     if(r.subject)info+='<br><span style="font-size:11px;color:var(--muted)">Subject: '+r.subject+'</span>';
@@ -915,11 +917,15 @@ async function selfSignedCert(){
 async function issueCert(){
     const domain=document.getElementById('cert-domain').value.trim();
     const email=document.getElementById('cert-email').value.trim();
-    if(!domain||!email){toast('Domain and Email required','err');return}
-    if(!confirm('Issue Lets Encrypt cert for '+domain+'? Port 80 must be free.')){return}
+    if(!domain){toast('Domain is required','err');return}
+    if(!confirm('Issue Lets Encrypt cert for '+domain+'?\n\nRequirements:\n• Domain A-record must point to this server\n• Port 80 must be free\n• Email is optional')){return}
     toast('Issuing certificate (may take 30-60s)...','info');
     const r=await api('/api/cert/acme',{method:'POST',body:JSON.stringify({domain,email})});
-    if(r&&r.success){toast(r.message,'ok');loadCertStatus()}else toast(r&&r.error||'Error','err');
+    if(r&&r.success){
+        toast(r.message,'ok');
+        loadCertStatus();
+        if(r.restart)setTimeout(()=>{toast('Reloading page with HTTPS...','info');setTimeout(()=>location.href='https://'+domain+':'+location.port+'/login',2000)},1000);
+    }else toast(r&&r.error||'Error','err');
 }
 async function revokeCert(){
     if(!confirm('Remove SSL certificate? Panel will switch to HTTP after restart.'))return;

@@ -91,19 +91,50 @@ XRAY_VER=$("$INSTALL_DIR/xray/xray" version 2>/dev/null | head -1 | awk '{print 
 ok "Xray-core: ${C}${XRAY_VER}${N} : Installed"
 
 # ── Step 5 ──
-step "Generating SSL certificate"
+step "SSL Certificate Setup"
 CERT_DIR="$INSTALL_DIR/data/cert"
 mkdir -p "$CERT_DIR"
-if [ ! -f "$CERT_DIR/fullchain.pem" ]; then
-    SERVER_IP=$(curl -s4 --max-time 5 ifconfig.me 2>/dev/null || curl -s4 --max-time 5 api.ipify.org 2>/dev/null || echo "127.0.0.1")
-    openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
-        -keyout "$CERT_DIR/privkey.pem" -out "$CERT_DIR/fullchain.pem" \
-        -days 3650 -nodes \
-        -subj "/CN=SelfRay-UI" \
-        -addext "subjectAltName=IP:${SERVER_IP},DNS:localhost,IP:127.0.0.1" 2>/dev/null
-    ok "Self-signed certificate generated (10 years)"
-else
-    ok "Existing certificate preserved"
+SERVER_IP=$(curl -s4 --max-time 5 ifconfig.me 2>/dev/null || curl -s4 --max-time 5 api.ipify.org 2>/dev/null || echo "127.0.0.1")
+SSL_DOMAIN=""
+
+echo ""
+echo -e "  ${B}Your server IP:${N} ${C}${SERVER_IP}${N}"
+echo ""
+echo -e "  ${B}Do you have a domain pointed to this server?${N}"
+echo -e "  ${D}(A-record → ${SERVER_IP})${N}"
+echo ""
+read -p "  Enter domain (or press Enter to skip): " SSL_DOMAIN
+echo ""
+
+if [ -n "$SSL_DOMAIN" ]; then
+    inf "Issuing Let's Encrypt certificate for ${C}${SSL_DOMAIN}${N}..."
+    apt-get install -y -qq certbot > /dev/null 2>&1
+    certbot certonly --standalone --preferred-challenges http --http-01-port 80 \
+        -d "$SSL_DOMAIN" --agree-tos --non-interactive --register-unsafely-without-email \
+        --keep-until-expiring 2>/dev/null
+    LE_CERT="/etc/letsencrypt/live/${SSL_DOMAIN}/fullchain.pem"
+    LE_KEY="/etc/letsencrypt/live/${SSL_DOMAIN}/privkey.pem"
+    if [ -f "$LE_CERT" ] && [ -f "$LE_KEY" ]; then
+        cp "$LE_CERT" "$CERT_DIR/fullchain.pem"
+        cp "$LE_KEY" "$CERT_DIR/privkey.pem"
+        ok "Let's Encrypt certificate issued for ${C}${SSL_DOMAIN}${N}"
+    else
+        wrn "Let's Encrypt failed. Generating self-signed certificate..."
+        SSL_DOMAIN=""
+    fi
+fi
+
+if [ -z "$SSL_DOMAIN" ]; then
+    if [ ! -f "$CERT_DIR/fullchain.pem" ]; then
+        openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
+            -keyout "$CERT_DIR/privkey.pem" -out "$CERT_DIR/fullchain.pem" \
+            -days 3650 -nodes \
+            -subj "/CN=SelfRay-UI" \
+            -addext "subjectAltName=IP:${SERVER_IP},DNS:localhost,IP:127.0.0.1" 2>/dev/null
+        ok "Self-signed certificate generated (10 years)"
+    else
+        ok "Existing certificate preserved"
+    fi
 fi
 
 # ── Step 6 ──
@@ -214,14 +245,36 @@ step "Starting SelfRay-UI"
 systemctl restart ${SERVICE_NAME}
 sleep 3
 
-SERVER_IP=$(curl -s4 --max-time 5 ifconfig.me 2>/dev/null || curl -s4 --max-time 5 api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}')
+if [ -z "$SERVER_IP" ]; then
+    SERVER_IP=$(curl -s4 --max-time 5 ifconfig.me 2>/dev/null || curl -s4 --max-time 5 api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}')
+fi
+
+# Save SSL domain in DB if set
+if [ -n "$SSL_DOMAIN" ]; then
+    source "$INSTALL_DIR/venv/bin/activate"
+    python3 -c "
+import sys;sys.path.insert(0,'$INSTALL_DIR')
+from app.main import *
+set_setting('ssl_domain', '$SSL_DOMAIN')
+set_setting('ssl_enabled', 'true')
+set_setting('ssl_cert_path', '$CERT_DIR/fullchain.pem')
+set_setting('ssl_key_path', '$CERT_DIR/privkey.pem')
+" 2>/dev/null
+    systemctl restart ${SERVICE_NAME}
+    sleep 2
+fi
+
 ADMIN_PASS=""
 for i in 1 2 3; do
     ADMIN_PASS=$(journalctl -u $SERVICE_NAME --no-pager 2>/dev/null | grep "Admin Password" | tail -1 | awk '{print $NF}')
     [ -n "$ADMIN_PASS" ] && break; sleep 2
 done
 
-PANEL_URL="https://${SERVER_IP}:${PANEL_PORT}"
+if [ -n "$SSL_DOMAIN" ]; then
+    PANEL_URL="https://${SSL_DOMAIN}:${PANEL_PORT}"
+else
+    PANEL_URL="https://${SERVER_IP}:${PANEL_PORT}"
+fi
 
 echo ""
 echo -e "${G}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${N}"
