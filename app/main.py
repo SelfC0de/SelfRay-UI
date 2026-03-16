@@ -1116,14 +1116,14 @@ import random as _rnd
 
 AUTOGEN_CONFIGS = [
     {"protocol": "vless", "network": "tcp", "security": "reality", "flow": "xtls-rprx-vision"},
-    {"protocol": "vless", "network": "ws", "security": "reality", "flow": ""},
+    {"protocol": "vless", "network": "tcp", "security": "reality", "flow": "xtls-rprx-vision"},
     {"protocol": "vless", "network": "grpc", "security": "reality", "flow": ""},
     {"protocol": "vless", "network": "xhttp", "security": "reality", "flow": ""},
+    {"protocol": "vless", "network": "httpupgrade", "security": "reality", "flow": ""},
     {"protocol": "vless", "network": "tcp", "security": "reality", "flow": "xtls-rprx-vision"},
     {"protocol": "vmess", "network": "ws", "security": "none", "flow": ""},
     {"protocol": "vmess", "network": "tcp", "security": "none", "flow": ""},
-    {"protocol": "trojan", "network": "ws", "security": "tls", "flow": ""},
-    {"protocol": "vless", "network": "httpupgrade", "security": "reality", "flow": ""},
+    {"protocol": "vless", "network": "grpc", "security": "reality", "flow": ""},
     {"protocol": "shadowsocks", "network": "tcp", "security": "none", "flow": ""},
 ]
 
@@ -1174,18 +1174,29 @@ async def api_delete_auto_inbounds(user: str = Depends(get_current_user)):
 
 
 @app.post("/api/inbounds/auto-generate")
-async def api_auto_generate(user: str = Depends(get_current_user)):
+async def api_auto_generate(request: Request, user: str = Depends(get_current_user)):
     if not XRAY_BIN.exists():
         return {"success": False, "error": "Install Xray first"}
 
-    wl_domains = _load_whitelist_domains()
-    dest_pool = [d + ":443" if ":" not in d else d for d in wl_domains] if wl_domains != REALITY_DESTS else REALITY_DESTS
+    server_ip = _get_server_ip(request)
+    if not server_ip or server_ip in ("0.0.0.0", "127.0.0.1", "localhost"):
+        try:
+            r = subprocess.run(["curl", "-s4", "--max-time", "5", "ifconfig.me"],
+                               capture_output=True, text=True, timeout=10)
+            server_ip = r.stdout.strip() if r.returncode == 0 else ""
+        except:
+            pass
+    if not server_ip:
+        return {"success": False, "error": "Cannot detect server IP"}
+
     used_ports = set()
     conn = get_db()
     existing = conn.execute("SELECT port FROM inbounds").fetchall()
     conn.close()
     for r in existing:
         used_ports.add(r["port"])
+    used_ports.add(int(get_setting("panel_port", "8443")))
+    used_ports.add(int(get_setting("xray_api_port", "10085")))
 
     results = []
     configs = list(AUTOGEN_CONFIGS)
@@ -1193,12 +1204,11 @@ async def api_auto_generate(user: str = Depends(get_current_user)):
 
     fixed_ports = [443, 8443]
     for cfg in configs[:10]:
+        port = None
         if fixed_ports:
-            port = fixed_ports.pop(0)
-            if port in used_ports:
-                port = None
-        else:
-            port = None
+            p = fixed_ports.pop(0)
+            if p not in used_ports:
+                port = p
         if port is None:
             for _ in range(100):
                 port = _rnd.randint(10000, 60000)
@@ -1209,6 +1219,7 @@ async def api_auto_generate(user: str = Depends(get_current_user)):
         kwargs = {
             "protocol": cfg["protocol"],
             "port": port,
+            "listen": server_ip,
             "network": cfg["network"],
             "security": cfg["security"],
             "flow": cfg["flow"],
@@ -1217,19 +1228,17 @@ async def api_auto_generate(user: str = Depends(get_current_user)):
         }
 
         if cfg["security"] == "reality":
-            dest_domain = _rnd.choice(dest_pool)
+            dest_domain = _rnd.choice(REALITY_DESTS)
             sni = dest_domain.split(":")[0]
             kwargs["reality_dest"] = dest_domain
             kwargs["reality_server_names"] = sni
-            kwargs["reality_fingerprint"] = _rnd.choice(UTLS_FPS)
+            kwargs["reality_fingerprint"] = "chrome"
         elif cfg["protocol"] == "shadowsocks":
             kwargs["ss_method"] = "chacha20-ietf-poly1305"
             kwargs["ss_password"] = secrets.token_urlsafe(16)
 
         if cfg["network"] == "ws":
             kwargs["ws_path"] = "/" + secrets.token_hex(4)
-            if _rnd.random() > 0.5 and dest_pool:
-                kwargs["ws_host"] = _rnd.choice(dest_pool).split(":")[0]
         elif cfg["network"] == "grpc":
             kwargs["grpc_service_name"] = secrets.token_hex(4)
         elif cfg["network"] == "httpupgrade":
