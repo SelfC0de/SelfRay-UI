@@ -137,9 +137,10 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 <div id="tab-inbounds" class="tc">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:6px">
         <h3 style="background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;font-size:16px">Inbound List</h3>
-        <div class="bg">
+        <div class="bg" style="flex-wrap:wrap;gap:6px">
             <button class="btn btn-p" onclick="showAddIb()">+ New Inbound</button>
             <button class="btn btn-o" onclick="autoGenerate()">⚡ Auto-Generate 10</button>
+            <button class="btn btn-d btn-sm" onclick="deleteAutoGen()">🗑 Delete Auto-Gen</button>
         </div>
     </div>
     <div id="ib-list"></div>
@@ -584,10 +585,16 @@ async function showConfig(){const c=await api('/api/xray/config');document.getEl
 function fmtB(b){if(!b||b===0)return '0 B';const u=['B','KB','MB','GB','TB'];let i=0;let v=b;while(v>=1024&&i<u.length-1){v/=1024;i++}return v.toFixed(i>0?1:0)+' '+u[i]}
 function toGB(val,unit){if(!val)return 0;if(unit==='MB')return val/1024;if(unit==='TB')return val*1024;return val}
 async function autoGenerate(){
-    if(!confirm('Generate 10 random inbounds? (different protocols, ports, transports)\nExisting inbounds will NOT be deleted.'))return;
+    if(!confirm('Generate 10 random inbounds?\nExisting inbounds will NOT be deleted.'))return;
     toast('Generating 10 inbounds...','info');
     const r=await api('/api/inbounds/auto-generate',{method:'POST'});
     if(r&&r.success){toast(r.generated+'/'+r.total+' inbounds created','ok');loadIb()}else toast(r&&r.error||'Failed','err');
+}
+async function deleteAutoGen(){
+    if(!confirm('Delete ALL auto-generated inbounds?\nThey will be disabled first, then removed.'))return;
+    toast('Removing auto-generated inbounds...','info');
+    const r=await api('/api/inbounds/delete-auto',{method:'POST'});
+    if(r&&r.success){toast(r.deleted+' auto-generated inbounds deleted','ok');loadIb()}else toast(r&&r.error||'Failed','err');
 }
 async function loadIb(){
     const data=await api('/api/inbounds');if(!data)return;

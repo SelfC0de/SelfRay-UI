@@ -1150,6 +1150,29 @@ def _load_whitelist_domains():
         return REALITY_DESTS
 
 
+@app.post("/api/inbounds/delete-auto")
+async def api_delete_auto_inbounds(user: str = Depends(get_current_user)):
+    try:
+        conn = get_db()
+        rows = conn.execute("SELECT id FROM inbounds WHERE remark LIKE 'auto-%'").fetchall()
+        if not rows:
+            conn.close()
+            return {"success": True, "deleted": 0}
+        ids = [r["id"] for r in rows]
+        for ib_id in ids:
+            conn.execute("UPDATE inbounds SET enabled=0 WHERE id=?", (ib_id,))
+        conn.commit()
+        for ib_id in ids:
+            conn.execute("DELETE FROM clients WHERE inbound_id=?", (ib_id,))
+            conn.execute("DELETE FROM inbounds WHERE id=?", (ib_id,))
+        conn.commit()
+        conn.close()
+        restart_xray()
+        return {"success": True, "deleted": len(ids)}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @app.post("/api/inbounds/auto-generate")
 async def api_auto_generate(user: str = Depends(get_current_user)):
     if not XRAY_BIN.exists():
