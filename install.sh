@@ -271,9 +271,9 @@ for i in 1 2 3; do
 done
 
 if [ -n "$SSL_DOMAIN" ]; then
-    PANEL_URL="https://${SSL_DOMAIN}:${PANEL_PORT}"
+    PANEL_URL="https://${SSL_DOMAIN}:${PANEL_PORT}/login"
 else
-    PANEL_URL="https://${SERVER_IP}:${PANEL_PORT}"
+    PANEL_URL="https://${SERVER_IP}:${PANEL_PORT}/login"
 fi
 
 echo ""
