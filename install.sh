@@ -109,10 +109,10 @@ if [ -d "$INSTALL_DIR" ]; then
         ok "Database backed up"
     fi
     rm -rf "$INSTALL_DIR"
+    sleep 0.5
 fi
 
-(git clone --depth 1 "https://github.com/${REPO}.git" "$INSTALL_DIR" > /dev/null 2>&1) &
-spin $! "Cloning repository..."
+git clone --depth 1 "https://github.com/${REPO}.git" "$INSTALL_DIR" > /dev/null 2>&1
 ok "Repository cloned"
 
 if [ -f /tmp/selfray_backup.db ]; then
@@ -125,11 +125,11 @@ fi
 #  STEP 3: Python Environment
 # ══════════════════════════════════════
 step "03" "Python Environment"
-(python3 -m venv "$INSTALL_DIR/venv" && source "$INSTALL_DIR/venv/bin/activate" && pip install --quiet --no-cache-dir -r "$INSTALL_DIR/requirements.txt") &
-spin $! "Setting up virtual environment..."
+python3 -m venv "$INSTALL_DIR/venv"
 source "$INSTALL_DIR/venv/bin/activate"
+pip install --quiet --no-cache-dir -r "$INSTALL_DIR/requirements.txt" &
+spin $! "Installing Python dependencies..."
 ok "Python environment ready"
-ok "Dependencies installed"
 
 # ══════════════════════════════════════
 #  STEP 4: Xray Core
