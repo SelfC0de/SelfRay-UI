@@ -481,7 +481,18 @@ def _check_and_disable_clients():
 
 
 app = FastAPI(title="SelfRay-UI", lifespan=lifespan)
-app.add_middleware(SessionMiddleware, secret_key=secrets.token_hex(32))
+def _get_session_secret():
+    try:
+        s = get_setting("session_secret", "")
+        if not s:
+            s = secrets.token_hex(32)
+            set_setting("session_secret", s)
+        return s
+    except:
+        return secrets.token_hex(32)
+
+init_db()
+app.add_middleware(SessionMiddleware, secret_key=_get_session_secret())
 app.mount("/static", StaticFiles(directory=str(APP_DIR / "static")), name="static")
 templates = Jinja2Templates(directory=str(APP_DIR / "templates"))
 
@@ -2155,7 +2166,6 @@ async def api_tg_restart_bot(user: str = Depends(get_current_user)):
 
 if __name__ == "__main__":
     import uvicorn
-    init_db()
     setup_admin()
     port = int(get_setting("panel_port", "8443"))
     host = get_setting("panel_host", "0.0.0.0")

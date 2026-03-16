@@ -148,17 +148,20 @@ case "$1" in
     creds)   journalctl -u $SERVICE --no-pager 2>/dev/null | grep -A4 "First Run" | tail -5 ;;
     reset-password)
         source "$DIR/venv/bin/activate"
+        cd "$DIR"
         python3 -c "
-import sys;sys.path.insert(0,'$DIR')
+import sys;sys.path.insert(0,'.')
 from app.main import *
 init_db()
 import secrets
 p=secrets.token_urlsafe(12)
 c=get_db()
-c.execute('UPDATE users SET password_hash=? WHERE username=\"admin\"',(hash_password(p),))
+c.execute('DELETE FROM users')
+c.execute('INSERT INTO users (username, password_hash) VALUES (?, ?)',('admin',hash_password(p)))
 c.commit();c.close()
 print()
-print('  New password: '+p)
+print('  Login:    admin')
+print('  Password: '+p)
 print()
 "
         systemctl restart $SERVICE
