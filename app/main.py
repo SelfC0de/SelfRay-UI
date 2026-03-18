@@ -2152,7 +2152,7 @@ async def api_cascade_setup_middleman(request: Request, user: str = Depends(get_
 
     outbounds = _get_xray_outbounds()
     outbounds = [o for o in outbounds if o.get("tag") != "cascade-gate"]
-    outbounds.append(cascade_outbound)
+    outbounds.insert(0, cascade_outbound)
     _set_xray_outbounds(outbounds)
 
     rules = json.loads(get_setting("custom_routing_rules", "[]") or "[]")
@@ -2224,6 +2224,56 @@ async def api_cascade_status(user: str = Depends(get_current_user)):
         "gate_ip": get_setting("cascade_gate_ip", ""),
         "gate_port": get_setting("cascade_gate_port", ""),
     }
+
+
+@app.post("/api/cascade/proxy")
+async def api_cascade_proxy(request: Request, user: str = Depends(get_current_user)):
+    body = await request.json()
+    target_url = body.get("target_url", "").rstrip("/")
+    target_login = body.get("target_login", "")
+    target_pass = body.get("target_pass", "")
+    path = body.get("path", "/api/status")
+    method = body.get("method", "GET")
+    req_body = body.get("body")
+
+    if not target_url:
+        return {"proxy_error": "Target URL required"}
+
+    import urllib.request, urllib.error, http.cookiejar
+    try:
+        cj = http.cookiejar.CookieJar()
+        import ssl as _ssl
+        ctx = _ssl._create_unverified_context()
+        opener = urllib.request.build_opener(
+            urllib.request.HTTPCookieProcessor(cj),
+            urllib.request.HTTPSHandler(context=ctx)
+        )
+        login_data = f"username={urllib.parse.quote(target_login)}&password={urllib.parse.quote(target_pass)}".encode()
+        login_req = urllib.request.Request(f"{target_url}/login", data=login_data, method="POST")
+        login_req.add_header("Content-Type", "application/x-www-form-urlencoded")
+        try:
+            opener.open(login_req, timeout=15)
+        except urllib.error.HTTPError as e:
+            if e.code not in (302, 303):
+                return {"proxy_error": f"Login failed: HTTP {e.code}"}
+
+        api_url = f"{target_url}{path}"
+        if req_body:
+            data = json.dumps(req_body).encode() if isinstance(req_body, dict) else req_body.encode()
+        else:
+            data = None
+        api_req = urllib.request.Request(api_url, data=data, method=method)
+        api_req.add_header("Content-Type", "application/json")
+        resp = opener.open(api_req, timeout=30)
+        result = json.loads(resp.read().decode())
+        return result
+    except urllib.error.HTTPError as e:
+        try:
+            return json.loads(e.read().decode())
+        except:
+            return {"proxy_error": f"HTTP {e.code}"}
+    except Exception as e:
+        return {"proxy_error": str(e)}
 
 
 # ═══════════════════════════════════════════

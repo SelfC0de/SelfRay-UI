@@ -186,13 +186,11 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
     <div class="card">
         <h3>⚙️ Cascade Settings</h3>
         <div class="fr">
-            <div class="fg"><label>Entry Port (users connect to RU on this port)</label><input type="number" id="cas-entry-port" value="443"></div>
-            <div class="fg"><label>Bridge Port (RU→EU internal tunnel)</label><input type="number" id="cas-bridge-port" value="20001"></div>
+            <div class="fg"><label>VPN Port (same on both servers)</label><input type="number" id="cas-vpn-port" value="8443"></div>
+            <div class="fg"><label>Reality Dest (camouflage site)</label><input type="text" id="cas-dest" value="www.google.com:443"></div>
         </div>
-        <div class="fr">
-            <div class="fg"><label>Reality Dest (camouflage)</label><input type="text" id="cas-dest" value="www.google.com:443"></div>
-            <div class="fg"><label>Client Name</label><input type="text" id="cas-client" value="cascade-user"></div>
-        </div>
+        <div class="fg"><label>Client Name</label><input type="text" id="cas-client" value="cascade-user"></div>
+        <p style="font-size:10px;color:#f39c12;margin:8px 0">⚠ VPN port (8443) must differ from panel port. Change panel port in Settings first if needed (e.g. panel → 9443, VPN → 8443).</p>
         <div class="bg" style="margin-top:12px;flex-wrap:wrap;gap:8px">
             <button class="btn btn-p" onclick="createCascade()" style="min-width:200px">🚀 Create Cascade</button>
             <button class="btn btn-d" onclick="removeCascade()" style="min-width:200px">🗑 Remove Cascade</button>
@@ -203,12 +201,17 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
     <div class="card" style="border:1px solid rgba(0,200,255,.15)">
         <h3 style="font-size:13px;color:var(--accent)">📖 How it works</h3>
         <div style="font-size:11px;color:var(--muted);line-height:1.8">
-            <strong>1.</strong> On EU server — creates an inbound (VLESS+Reality) on bridge port for RU server<br>
-            <strong>2.</strong> On RU server — creates an inbound (VLESS+Reality) on entry port for users<br>
-            <strong>3.</strong> On RU server — creates an outbound to EU server + routing rule<br>
-            <strong>4.</strong> Users connect to RU server → traffic goes to EU server → internet<br>
+            <strong>1.</strong> On EU server — creates VLESS+Reality inbound on VPN port (8443)<br>
+            <strong>2.</strong> On RU server — creates VLESS+Reality inbound on same VPN port (8443) for users<br>
+            <strong>3.</strong> On RU server — creates outbound (VLESS+Reality) to EU server:8443<br>
+            <strong>4.</strong> On RU server — creates routing rule: inbound tag → outbound tag (first priority!)<br>
+            <strong>5.</strong> Restarts Xray on both servers<br>
             <br>
-            <strong>Result:</strong> DPI sees connection to RU server (not blocked). EU server provides the exit IP.
+            <strong>Flow:</strong> User → RU:8443 → EU:8443 → Internet<br>
+            <strong>Result:</strong> DPI sees connection to RU (whitelisted). Exit IP = EU server.<br>
+            <br>
+            <strong style="color:#f39c12">⚠ Important:</strong> Panel port and VPN port must be different!<br>
+            Example: panel on port 9443, VPN on port 8443.
         </div>
     </div>
 </div>
@@ -1184,17 +1187,6 @@ function wlApply(){
     document.getElementById('ib-r-sni').value=s;
     toast('Applied: '+s,'info');
 }
-async function _casApi(url, login, pass, path, opts={}){
-    try{
-        const lr=await fetch(url+'/login',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
-            body:'username='+encodeURIComponent(login)+'&password='+encodeURIComponent(pass),redirect:'manual',credentials:'omit'});
-        const cookies=lr.headers.get('set-cookie')||'';
-        const sid=cookies.match(/session=([^;]+)/);
-        if(!sid)return {error:'Login failed — wrong credentials or URL'};
-        const r=await fetch(url+path,{...opts,headers:{...(opts.headers||{}),'Cookie':'session='+sid[1],'Content-Type':'application/json'}});
-        return await r.json();
-    }catch(e){return {error:e.message}}
-}
 async function testCascadeServer(which){
     const url=document.getElementById('cas-'+which+'-url').value.replace(/\/+$/,'');
     const login=document.getElementById('cas-'+which+'-login').value;
@@ -1202,8 +1194,8 @@ async function testCascadeServer(which){
     const el=document.getElementById('cas-'+which+'-status');
     if(!url||!login||!pass){el.innerHTML='<span style="color:#e74c3c">Fill all fields</span>';return}
     el.innerHTML='<span style="color:var(--muted)">Testing...</span>';
-    const r=await _casApi(url,login,pass,'/api/status');
-    if(r.error){el.innerHTML='<span style="color:#e74c3c">✘ '+r.error+'</span>';return}
+    const r=await api('/api/cascade/proxy',{method:'POST',body:JSON.stringify({target_url:url,target_login:login,target_pass:pass,path:'/api/status'})});
+    if(!r||r.proxy_error){el.innerHTML='<span style="color:#e74c3c">✘ '+(r&&r.proxy_error||'Connection failed')+'</span>';return}
     el.innerHTML='<span style="color:#2ecc71">✔ Connected</span> — Xray '+(r.xray_running?'running':'stopped')+', IP: '+(r.real_ip||r.server_ip||'?');
 }
 async function createCascade(){
@@ -1213,33 +1205,29 @@ async function createCascade(){
     const ruUrl=document.getElementById('cas-ru-url').value.replace(/\/+$/,'');
     const ruLogin=document.getElementById('cas-ru-login').value;
     const ruPass=document.getElementById('cas-ru-pass').value;
-    const entryPort=+document.getElementById('cas-entry-port').value||443;
-    const bridgePort=+document.getElementById('cas-bridge-port').value||20001;
+    const vpnPort=+document.getElementById('cas-vpn-port').value||8443;
     const dest=document.getElementById('cas-dest').value||'www.google.com:443';
     const clientName=document.getElementById('cas-client').value||'cascade-user';
     const el=document.getElementById('cas-result');
     if(!euUrl||!euPass||!ruUrl||!ruPass){el.innerHTML='<span style="color:#e74c3c">Fill all server credentials</span>';return}
-    if(!confirm('This will:\n1. Create inbound on EU server (port '+bridgePort+')\n2. Create inbound on RU server (port '+entryPort+')\n3. Route RU→EU traffic\n\nContinue?'))return;
-    el.innerHTML='<div style="color:var(--accent)">⏳ Step 1/4: Creating inbound on EU server...</div>';
-    const euR=await _casApi(euUrl,euLogin,euPass,'/api/cascade/setup-gate',{method:'POST',body:JSON.stringify({port:bridgePort,dest:dest,client_name:clientName})});
-    if(euR.error||!euR.success){el.innerHTML='<span style="color:#e74c3c">✘ EU server: '+(euR.error||euR.detail||'Failed')+'</span>';return}
-    el.innerHTML+='<div style="color:#2ecc71">✔ EU inbound created (port '+bridgePort+')</div>';
-    el.innerHTML+='<div style="color:var(--accent)">⏳ Step 2/4: Creating inbound on RU server...</div>';
-    const ruIb=await _casApi(ruUrl,ruLogin,ruPass,'/api/cascade/setup-middleman',{method:'POST',body:JSON.stringify({
-        entry_port:entryPort,dest:dest,client_name:clientName,
-        gate_ip:euR.gate_ip,gate_port:bridgePort,gate_uuid:euR.uuid,gate_public_key:euR.public_key,gate_short_id:euR.short_id,gate_sni:euR.sni,gate_fingerprint:euR.fingerprint
-    })});
-    if(ruIb.error||!ruIb.success){el.innerHTML+='<span style="color:#e74c3c">✘ RU server: '+(ruIb.error||ruIb.detail||'Failed')+'</span>';return}
-    el.innerHTML+='<div style="color:#2ecc71">✔ RU inbound created (port '+entryPort+')</div>';
-    el.innerHTML+='<div style="color:#2ecc71">✔ RU→EU outbound + routing configured</div>';
-    el.innerHTML+='<div style="color:var(--accent)">⏳ Step 3/4: Restarting Xray on both servers...</div>';
-    await _casApi(euUrl,euLogin,euPass,'/api/xray/restart',{method:'POST'});
-    await _casApi(ruUrl,ruLogin,ruPass,'/api/xray/restart',{method:'POST'});
-    el.innerHTML+='<div style="color:#2ecc71">✔ Xray restarted</div>';
-    el.innerHTML+='<div style="margin-top:10px;padding:12px;background:rgba(46,213,115,.1);border:1px solid rgba(46,213,115,.3);border-radius:8px">';
-    el.innerHTML+='<strong style="color:#2ecc71">🎉 Cascade Ready!</strong><br><br>';
-    el.innerHTML+='<span style="font-size:11px;color:var(--muted)">Users connect to RU server:<br></span>';
-    if(ruIb.link)el.innerHTML+='<code style="font-size:10px;word-break:break-all;color:#888">'+ruIb.link+'</code>';
+    if(!confirm('Create cascade?\n\n1. EU server: VLESS+Reality inbound on port '+vpnPort+'\n2. RU server: VLESS+Reality inbound on port '+vpnPort+'\n3. RU outbound → EU:'+vpnPort+'\n4. RU routing rule: inbound → outbound\n\nBoth servers must have SelfRay-UI running.\nContinue?'))return;
+    el.innerHTML='<div style="color:var(--accent)">⏳ Step 1/3: Creating inbound on EU server (port '+vpnPort+')...</div>';
+    const euR=await api('/api/cascade/proxy',{method:'POST',body:JSON.stringify({target_url:euUrl,target_login:euLogin,target_pass:euPass,path:'/api/cascade/setup-gate',method:'POST',body:{port:vpnPort,dest:dest,client_name:clientName}})});
+    if(!euR||euR.proxy_error||!euR.success){el.innerHTML='<span style="color:#e74c3c">✘ EU: '+(euR&&(euR.proxy_error||euR.error)||'Failed')+'</span>';return}
+    el.innerHTML+='<div style="color:#2ecc71">✔ EU inbound created — IP: '+euR.gate_ip+', port: '+vpnPort+'</div>';
+    el.innerHTML+='<div style="color:var(--accent)">⏳ Step 2/3: Configuring RU server (inbound + outbound + routing)...</div>';
+    const ruR=await api('/api/cascade/proxy',{method:'POST',body:JSON.stringify({target_url:ruUrl,target_login:ruLogin,target_pass:ruPass,path:'/api/cascade/setup-middleman',method:'POST',body:{entry_port:vpnPort,dest:dest,client_name:clientName,gate_ip:euR.gate_ip,gate_port:vpnPort,gate_uuid:euR.uuid,gate_public_key:euR.public_key,gate_short_id:euR.short_id,gate_sni:euR.sni,gate_fingerprint:euR.fingerprint}})});
+    if(!ruR||ruR.proxy_error||!ruR.success){el.innerHTML+='<span style="color:#e74c3c">✘ RU: '+(ruR&&(ruR.proxy_error||ruR.error)||'Failed')+'</span>';return}
+    el.innerHTML+='<div style="color:#2ecc71">✔ RU inbound + outbound to EU + routing rule created</div>';
+    el.innerHTML+='<div style="color:var(--accent)">⏳ Step 3/3: Restarting Xray on both servers...</div>';
+    await api('/api/cascade/proxy',{method:'POST',body:JSON.stringify({target_url:euUrl,target_login:euLogin,target_pass:euPass,path:'/api/xray/restart',method:'POST'})});
+    await api('/api/cascade/proxy',{method:'POST',body:JSON.stringify({target_url:ruUrl,target_login:ruLogin,target_pass:ruPass,path:'/api/xray/restart',method:'POST'})});
+    el.innerHTML+='<div style="color:#2ecc71">✔ Xray restarted on both servers</div>';
+    el.innerHTML+='<div style="margin-top:12px;padding:14px;background:rgba(46,213,115,.08);border:1px solid rgba(46,213,115,.25);border-radius:10px">';
+    el.innerHTML+='<div style="color:#2ecc71;font-weight:600;margin-bottom:8px">🎉 Cascade Ready!</div>';
+    el.innerHTML+='<div style="font-size:12px;color:var(--muted)">Users connect to <strong>RU server</strong> on port <strong>'+vpnPort+'</strong></div>';
+    el.innerHTML+='<div style="font-size:11px;color:var(--muted);margin-top:4px">Traffic flow: You → RU:'+vpnPort+' → EU:'+vpnPort+' → Internet</div>';
+    if(ruR.link)el.innerHTML+='<div style="margin-top:10px"><div style="font-size:11px;color:var(--accent);margin-bottom:4px">Connection link (give to users):</div><div style="font-size:10px;word-break:break-all;font-family:monospace;color:#aaa;background:rgba(0,0,0,.3);padding:10px;border-radius:6px;cursor:pointer" onclick="navigator.clipboard.writeText(this.textContent);toast(\'Copied!\',\'ok\')">'+ruR.link+'</div></div>';
     el.innerHTML+='</div>';
     loadCascadeStatus();
 }
@@ -1250,12 +1238,12 @@ async function removeCascade(){
     const ruUrl=document.getElementById('cas-ru-url').value.replace(/\/+$/,'');
     const ruLogin=document.getElementById('cas-ru-login').value;
     const ruPass=document.getElementById('cas-ru-pass').value;
-    if(!confirm('Remove cascade configuration from both servers?'))return;
+    if(!confirm('Remove cascade from both servers?'))return;
     const el=document.getElementById('cas-result');
-    el.innerHTML='<span style="color:var(--muted)">Removing cascade...</span>';
-    await _casApi(euUrl,euLogin,euPass,'/api/cascade/remove',{method:'POST'});
-    await _casApi(ruUrl,ruLogin,ruPass,'/api/cascade/remove',{method:'POST'});
-    el.innerHTML='<span style="color:#2ecc71">✔ Cascade removed from both servers</span>';
+    el.innerHTML='<span style="color:var(--muted)">Removing...</span>';
+    if(euUrl&&euPass)await api('/api/cascade/proxy',{method:'POST',body:JSON.stringify({target_url:euUrl,target_login:euLogin,target_pass:euPass,path:'/api/cascade/remove',method:'POST'})});
+    if(ruUrl&&ruPass)await api('/api/cascade/proxy',{method:'POST',body:JSON.stringify({target_url:ruUrl,target_login:ruLogin,target_pass:ruPass,path:'/api/cascade/remove',method:'POST'})});
+    el.innerHTML='<span style="color:#2ecc71">✔ Cascade removed</span>';
     loadCascadeStatus();
 }
 async function loadCascadeStatus(){
