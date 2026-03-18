@@ -2039,6 +2039,194 @@ async def api_totp_disable(user: str = Depends(get_current_user)):
 
 
 # ═══════════════════════════════════════════
+#  API: CASCADE (MULTI-HOP)
+# ═══════════════════════════════════════════
+
+@app.post("/api/cascade/setup-gate")
+async def api_cascade_setup_gate(request: Request, user: str = Depends(get_current_user)):
+    body = await request.json()
+    port = int(body.get("port", 20001))
+    dest = body.get("dest", "www.google.com:443")
+    client_name = body.get("client_name", "cascade-bridge")
+    sni = dest.split(":")[0]
+
+    conn = get_db()
+    existing = conn.execute("SELECT id FROM inbounds WHERE remark='cascade-gate'").fetchone()
+    if existing:
+        conn.execute("DELETE FROM clients WHERE inbound_id=?", (existing["id"],))
+        conn.execute("DELETE FROM inbounds WHERE id=?", (existing["id"],))
+        conn.commit()
+    conn.close()
+
+    result = core_create_inbound(
+        protocol="vless", port=port, remark="cascade-gate",
+        network="tcp", security="reality", flow="xtls-rprx-vision",
+        reality_dest=dest, reality_server_names=sni,
+        reality_fingerprint="chrome", client_name=client_name,
+    )
+    if not result.get("success"):
+        return {"success": False, "error": result.get("error", "Failed to create gate inbound")}
+
+    conn = get_db()
+    ib = conn.execute("SELECT * FROM inbounds WHERE remark='cascade-gate'").fetchone()
+    cl = conn.execute("SELECT * FROM clients WHERE inbound_id=?", (ib["id"],)).fetchone()
+    stream = json.loads(ib["stream_settings"])
+    rs = stream.get("realitySettings", {})
+    gate_ip = _get_real_ip()
+    conn.close()
+
+    return {
+        "success": True,
+        "gate_ip": gate_ip,
+        "uuid": cl["uuid"],
+        "public_key": rs.get("publicKey", ""),
+        "short_id": rs.get("shortIds", [""])[0],
+        "sni": sni,
+        "fingerprint": "chrome",
+        "port": port,
+    }
+
+
+@app.post("/api/cascade/setup-middleman")
+async def api_cascade_setup_middleman(request: Request, user: str = Depends(get_current_user)):
+    body = await request.json()
+    entry_port = int(body.get("entry_port", 443))
+    dest = body.get("dest", "www.google.com:443")
+    client_name = body.get("client_name", "cascade-user")
+    gate_ip = body.get("gate_ip", "")
+    gate_port = int(body.get("gate_port", 20001))
+    gate_uuid = body.get("gate_uuid", "")
+    gate_public_key = body.get("gate_public_key", "")
+    gate_short_id = body.get("gate_short_id", "")
+    gate_sni = body.get("gate_sni", "www.google.com")
+    gate_fingerprint = body.get("gate_fingerprint", "chrome")
+
+    if not gate_ip or not gate_uuid or not gate_public_key:
+        return {"success": False, "error": "Missing gate server details"}
+
+    sni = dest.split(":")[0]
+
+    conn = get_db()
+    existing = conn.execute("SELECT id FROM inbounds WHERE remark='cascade-entry'").fetchone()
+    if existing:
+        conn.execute("DELETE FROM clients WHERE inbound_id=?", (existing["id"],))
+        conn.execute("DELETE FROM inbounds WHERE id=?", (existing["id"],))
+        conn.commit()
+    conn.close()
+
+    result = core_create_inbound(
+        protocol="vless", port=entry_port, remark="cascade-entry",
+        network="tcp", security="reality", flow="xtls-rprx-vision",
+        reality_dest=dest, reality_server_names=sni,
+        reality_fingerprint="chrome", client_name=client_name,
+        _skip_restart=True,
+    )
+    if not result.get("success"):
+        return {"success": False, "error": result.get("error", "Failed to create entry inbound")}
+
+    cascade_outbound = {
+        "tag": "cascade-gate",
+        "protocol": "vless",
+        "settings": {
+            "vnext": [{
+                "address": gate_ip,
+                "port": gate_port,
+                "users": [{
+                    "id": gate_uuid,
+                    "encryption": "none",
+                    "flow": "xtls-rprx-vision"
+                }]
+            }]
+        },
+        "streamSettings": {
+            "network": "tcp",
+            "security": "reality",
+            "realitySettings": {
+                "serverName": gate_sni,
+                "fingerprint": gate_fingerprint,
+                "publicKey": gate_public_key,
+                "shortId": gate_short_id,
+            }
+        }
+    }
+
+    outbounds = _get_xray_outbounds()
+    outbounds = [o for o in outbounds if o.get("tag") != "cascade-gate"]
+    outbounds.append(cascade_outbound)
+    _set_xray_outbounds(outbounds)
+
+    rules = json.loads(get_setting("custom_routing_rules", "[]") or "[]")
+    rules = [r for r in rules if r.get("outboundTag") != "cascade-gate"]
+    rules.insert(0, {
+        "type": "field",
+        "inboundTag": [f"vless-{entry_port}-" + "*"],
+        "outboundTag": "cascade-gate"
+    })
+
+    conn = get_db()
+    entry_ib = conn.execute("SELECT tag FROM inbounds WHERE remark='cascade-entry'").fetchone()
+    conn.close()
+    if entry_ib:
+        rules[0]["inboundTag"] = [entry_ib["tag"]]
+
+    set_setting("custom_routing_rules", json.dumps(rules))
+    set_setting("cascade_gate_ip", gate_ip)
+    set_setting("cascade_gate_port", str(gate_port))
+    set_setting("cascade_active", "true")
+
+    restart_xray()
+
+    link = result.get("link", "")
+    if not link:
+        conn = get_db()
+        ib = conn.execute("SELECT * FROM inbounds WHERE remark='cascade-entry'").fetchone()
+        cl = conn.execute("SELECT * FROM clients WHERE inbound_id=?", (ib["id"],)).fetchone()
+        conn.close()
+        if ib and cl:
+            stream = json.loads(ib["stream_settings"])
+            settings = json.loads(ib["settings"])
+            link = _generate_link("vless", dict(cl), dict(ib), stream, settings, _get_real_ip())
+
+    return {"success": True, "link": link}
+
+
+@app.post("/api/cascade/remove")
+async def api_cascade_remove(user: str = Depends(get_current_user)):
+    conn = get_db()
+    for remark in ("cascade-gate", "cascade-entry"):
+        ib = conn.execute("SELECT id FROM inbounds WHERE remark=?", (remark,)).fetchone()
+        if ib:
+            conn.execute("DELETE FROM clients WHERE inbound_id=?", (ib["id"],))
+            conn.execute("DELETE FROM inbounds WHERE id=?", (ib["id"],))
+    conn.commit()
+    conn.close()
+
+    outbounds = _get_xray_outbounds()
+    outbounds = [o for o in outbounds if o.get("tag") != "cascade-gate"]
+    _set_xray_outbounds(outbounds)
+
+    rules = json.loads(get_setting("custom_routing_rules", "[]") or "[]")
+    rules = [r for r in rules if r.get("outboundTag") != "cascade-gate"]
+    set_setting("custom_routing_rules", json.dumps(rules))
+    set_setting("cascade_active", "false")
+    set_setting("cascade_gate_ip", "")
+    set_setting("cascade_gate_port", "")
+
+    restart_xray()
+    return {"success": True}
+
+
+@app.get("/api/cascade/status")
+async def api_cascade_status(user: str = Depends(get_current_user)):
+    active = get_setting("cascade_active", "false") == "true"
+    return {
+        "active": active,
+        "gate_ip": get_setting("cascade_gate_ip", ""),
+        "gate_port": get_setting("cascade_gate_port", ""),
+    }
+
+
+# ═══════════════════════════════════════════
 #  API: WARP
 # ═══════════════════════════════════════════
 

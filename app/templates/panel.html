@@ -107,6 +107,7 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 <div class="tabs">
     <div class="tab active" data-tab="dash">Dashboard</div>
     <div class="tab" data-tab="inbounds">Inbounds</div>
+    <div class="tab" data-tab="cascade">Cascade</div>
     <div class="tab" data-tab="settings">Settings</div>
     <div class="tab" data-tab="security">Security</div>
     <div class="tab" data-tab="telegram">Telegram</div>
@@ -144,6 +145,72 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
         </div>
     </div>
     <div id="ib-list"></div>
+</div>
+
+<!-- CASCADE -->
+<div id="tab-cascade" class="tc">
+    <div class="card">
+        <h3>🔗 Cascade (Multi-hop VPN)</h3>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.6">
+            Route traffic through two servers for extra security:<br>
+            <strong style="color:var(--accent)">You → RU Server (entry) → EU Server (exit) → Internet</strong><br>
+            <span style="font-size:11px">Both servers must have SelfRay-UI installed. Enter credentials below and click "Create Cascade".</span>
+        </p>
+        <div id="cascade-status" style="margin-bottom:12px"></div>
+    </div>
+
+    <div class="card">
+        <h3>🇷🇺 Entry Server (RU — Middleman)</h3>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:8px">Server in Russia. Users connect here. Traffic is forwarded to Exit server.</p>
+        <div class="fr3">
+            <div class="fg"><label>Panel URL</label><input type="text" id="cas-ru-url" placeholder="https://ru-server:8443"></div>
+            <div class="fg"><label>Login</label><input type="text" id="cas-ru-login" value="admin"></div>
+            <div class="fg"><label>Password</label><input type="password" id="cas-ru-pass" placeholder="password"></div>
+        </div>
+        <button class="btn btn-o btn-sm" onclick="testCascadeServer('ru')" style="margin-top:4px">Test Connection</button>
+        <div id="cas-ru-status" style="margin-top:6px;font-size:11px"></div>
+    </div>
+
+    <div class="card">
+        <h3>🇪🇺 Exit Server (EU/US — Gate)</h3>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:8px">Server abroad. Receives traffic from RU server and sends to internet. Your real exit point.</p>
+        <div class="fr3">
+            <div class="fg"><label>Panel URL</label><input type="text" id="cas-eu-url" placeholder="https://eu-server:8443"></div>
+            <div class="fg"><label>Login</label><input type="text" id="cas-eu-login" value="admin"></div>
+            <div class="fg"><label>Password</label><input type="password" id="cas-eu-pass" placeholder="password"></div>
+        </div>
+        <button class="btn btn-o btn-sm" onclick="testCascadeServer('eu')" style="margin-top:4px">Test Connection</button>
+        <div id="cas-eu-status" style="margin-top:6px;font-size:11px"></div>
+    </div>
+
+    <div class="card">
+        <h3>⚙️ Cascade Settings</h3>
+        <div class="fr">
+            <div class="fg"><label>Entry Port (users connect to RU on this port)</label><input type="number" id="cas-entry-port" value="443"></div>
+            <div class="fg"><label>Bridge Port (RU→EU internal tunnel)</label><input type="number" id="cas-bridge-port" value="20001"></div>
+        </div>
+        <div class="fr">
+            <div class="fg"><label>Reality Dest (camouflage)</label><input type="text" id="cas-dest" value="www.google.com:443"></div>
+            <div class="fg"><label>Client Name</label><input type="text" id="cas-client" value="cascade-user"></div>
+        </div>
+        <div class="bg" style="margin-top:12px;flex-wrap:wrap;gap:8px">
+            <button class="btn btn-p" onclick="createCascade()" style="min-width:200px">🚀 Create Cascade</button>
+            <button class="btn btn-d" onclick="removeCascade()" style="min-width:200px">🗑 Remove Cascade</button>
+        </div>
+        <div id="cas-result" style="margin-top:12px"></div>
+    </div>
+
+    <div class="card" style="border:1px solid rgba(0,200,255,.15)">
+        <h3 style="font-size:13px;color:var(--accent)">📖 How it works</h3>
+        <div style="font-size:11px;color:var(--muted);line-height:1.8">
+            <strong>1.</strong> On EU server — creates an inbound (VLESS+Reality) on bridge port for RU server<br>
+            <strong>2.</strong> On RU server — creates an inbound (VLESS+Reality) on entry port for users<br>
+            <strong>3.</strong> On RU server — creates an outbound to EU server + routing rule<br>
+            <strong>4.</strong> Users connect to RU server → traffic goes to EU server → internet<br>
+            <br>
+            <strong>Result:</strong> DPI sees connection to RU server (not blocked). EU server provides the exit IP.
+        </div>
+    </div>
 </div>
 
 <!-- SETTINGS -->
@@ -1117,7 +1184,90 @@ function wlApply(){
     document.getElementById('ib-r-sni').value=s;
     toast('Applied: '+s,'info');
 }
-loadSt();loadIb();loadTg();loadTotpStatus();loadWarpStatus();loadCertStatus();setInterval(loadSt,15000);setInterval(loadIb,30000);
+async function _casApi(url, login, pass, path, opts={}){
+    try{
+        const lr=await fetch(url+'/login',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
+            body:'username='+encodeURIComponent(login)+'&password='+encodeURIComponent(pass),redirect:'manual',credentials:'omit'});
+        const cookies=lr.headers.get('set-cookie')||'';
+        const sid=cookies.match(/session=([^;]+)/);
+        if(!sid)return {error:'Login failed — wrong credentials or URL'};
+        const r=await fetch(url+path,{...opts,headers:{...(opts.headers||{}),'Cookie':'session='+sid[1],'Content-Type':'application/json'}});
+        return await r.json();
+    }catch(e){return {error:e.message}}
+}
+async function testCascadeServer(which){
+    const url=document.getElementById('cas-'+which+'-url').value.replace(/\/+$/,'');
+    const login=document.getElementById('cas-'+which+'-login').value;
+    const pass=document.getElementById('cas-'+which+'-pass').value;
+    const el=document.getElementById('cas-'+which+'-status');
+    if(!url||!login||!pass){el.innerHTML='<span style="color:#e74c3c">Fill all fields</span>';return}
+    el.innerHTML='<span style="color:var(--muted)">Testing...</span>';
+    const r=await _casApi(url,login,pass,'/api/status');
+    if(r.error){el.innerHTML='<span style="color:#e74c3c">✘ '+r.error+'</span>';return}
+    el.innerHTML='<span style="color:#2ecc71">✔ Connected</span> — Xray '+(r.xray_running?'running':'stopped')+', IP: '+(r.real_ip||r.server_ip||'?');
+}
+async function createCascade(){
+    const euUrl=document.getElementById('cas-eu-url').value.replace(/\/+$/,'');
+    const euLogin=document.getElementById('cas-eu-login').value;
+    const euPass=document.getElementById('cas-eu-pass').value;
+    const ruUrl=document.getElementById('cas-ru-url').value.replace(/\/+$/,'');
+    const ruLogin=document.getElementById('cas-ru-login').value;
+    const ruPass=document.getElementById('cas-ru-pass').value;
+    const entryPort=+document.getElementById('cas-entry-port').value||443;
+    const bridgePort=+document.getElementById('cas-bridge-port').value||20001;
+    const dest=document.getElementById('cas-dest').value||'www.google.com:443';
+    const clientName=document.getElementById('cas-client').value||'cascade-user';
+    const el=document.getElementById('cas-result');
+    if(!euUrl||!euPass||!ruUrl||!ruPass){el.innerHTML='<span style="color:#e74c3c">Fill all server credentials</span>';return}
+    if(!confirm('This will:\n1. Create inbound on EU server (port '+bridgePort+')\n2. Create inbound on RU server (port '+entryPort+')\n3. Route RU→EU traffic\n\nContinue?'))return;
+    el.innerHTML='<div style="color:var(--accent)">⏳ Step 1/4: Creating inbound on EU server...</div>';
+    const euR=await _casApi(euUrl,euLogin,euPass,'/api/cascade/setup-gate',{method:'POST',body:JSON.stringify({port:bridgePort,dest:dest,client_name:clientName})});
+    if(euR.error||!euR.success){el.innerHTML='<span style="color:#e74c3c">✘ EU server: '+(euR.error||euR.detail||'Failed')+'</span>';return}
+    el.innerHTML+='<div style="color:#2ecc71">✔ EU inbound created (port '+bridgePort+')</div>';
+    el.innerHTML+='<div style="color:var(--accent)">⏳ Step 2/4: Creating inbound on RU server...</div>';
+    const ruIb=await _casApi(ruUrl,ruLogin,ruPass,'/api/cascade/setup-middleman',{method:'POST',body:JSON.stringify({
+        entry_port:entryPort,dest:dest,client_name:clientName,
+        gate_ip:euR.gate_ip,gate_port:bridgePort,gate_uuid:euR.uuid,gate_public_key:euR.public_key,gate_short_id:euR.short_id,gate_sni:euR.sni,gate_fingerprint:euR.fingerprint
+    })});
+    if(ruIb.error||!ruIb.success){el.innerHTML+='<span style="color:#e74c3c">✘ RU server: '+(ruIb.error||ruIb.detail||'Failed')+'</span>';return}
+    el.innerHTML+='<div style="color:#2ecc71">✔ RU inbound created (port '+entryPort+')</div>';
+    el.innerHTML+='<div style="color:#2ecc71">✔ RU→EU outbound + routing configured</div>';
+    el.innerHTML+='<div style="color:var(--accent)">⏳ Step 3/4: Restarting Xray on both servers...</div>';
+    await _casApi(euUrl,euLogin,euPass,'/api/xray/restart',{method:'POST'});
+    await _casApi(ruUrl,ruLogin,ruPass,'/api/xray/restart',{method:'POST'});
+    el.innerHTML+='<div style="color:#2ecc71">✔ Xray restarted</div>';
+    el.innerHTML+='<div style="margin-top:10px;padding:12px;background:rgba(46,213,115,.1);border:1px solid rgba(46,213,115,.3);border-radius:8px">';
+    el.innerHTML+='<strong style="color:#2ecc71">🎉 Cascade Ready!</strong><br><br>';
+    el.innerHTML+='<span style="font-size:11px;color:var(--muted)">Users connect to RU server:<br></span>';
+    if(ruIb.link)el.innerHTML+='<code style="font-size:10px;word-break:break-all;color:#888">'+ruIb.link+'</code>';
+    el.innerHTML+='</div>';
+    loadCascadeStatus();
+}
+async function removeCascade(){
+    const euUrl=document.getElementById('cas-eu-url').value.replace(/\/+$/,'');
+    const euLogin=document.getElementById('cas-eu-login').value;
+    const euPass=document.getElementById('cas-eu-pass').value;
+    const ruUrl=document.getElementById('cas-ru-url').value.replace(/\/+$/,'');
+    const ruLogin=document.getElementById('cas-ru-login').value;
+    const ruPass=document.getElementById('cas-ru-pass').value;
+    if(!confirm('Remove cascade configuration from both servers?'))return;
+    const el=document.getElementById('cas-result');
+    el.innerHTML='<span style="color:var(--muted)">Removing cascade...</span>';
+    await _casApi(euUrl,euLogin,euPass,'/api/cascade/remove',{method:'POST'});
+    await _casApi(ruUrl,ruLogin,ruPass,'/api/cascade/remove',{method:'POST'});
+    el.innerHTML='<span style="color:#2ecc71">✔ Cascade removed from both servers</span>';
+    loadCascadeStatus();
+}
+async function loadCascadeStatus(){
+    const el=document.getElementById('cascade-status');
+    try{
+        const r=await api('/api/cascade/status');
+        if(r&&r.active)el.innerHTML='<span class="badge b-on">Cascade Active</span> <span style="font-size:11px;color:var(--muted)">→ '+r.gate_ip+':'+r.gate_port+'</span>';
+        else el.innerHTML='<span class="badge b-off">Not Configured</span>';
+    }catch(e){el.innerHTML='<span class="badge b-off">Not Configured</span>'}
+}
+
+loadSt();loadIb();loadTg();loadTotpStatus();loadWarpStatus();loadCertStatus();loadCascadeStatus();setInterval(loadSt,15000);setInterval(loadIb,30000);
 </script>
 </body>
 </html>
