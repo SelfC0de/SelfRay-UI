@@ -94,8 +94,8 @@ fi
 #  STEP 1: System Dependencies
 # ══════════════════════════════════════
 step "01" "System Dependencies"
-(apt-get update -qq > /dev/null 2>&1 && apt-get install -y -qq python3 python3-pip python3-venv unzip wget curl git > /dev/null 2>&1) &
-spin $! "Installing packages..."
+apt-get update -qq > /dev/null 2>&1
+apt-get install -y -qq python3 python3-pip python3-venv unzip wget curl git > /dev/null 2>&1
 ok "System packages ready"
 
 # ══════════════════════════════════════
